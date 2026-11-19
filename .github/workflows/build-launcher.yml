@@ -33,9 +33,14 @@ jobs:
 
       - name: Install Switch portlibs
         run: |
-          dkp-pacman -Sy --noconfirm --needed \
-            switch-freetype switch-harfbuzz switch-bzip2 switch-libpng \
-            switch-zlib switch-mpg123 switch-curl switch-mbedtls
+          for attempt in 1 2 3; do
+            dkp-pacman -Syy --noconfirm --needed \
+              switch-freetype switch-harfbuzz switch-bzip2 switch-libpng \
+              switch-zlib switch-mpg123 switch-curl switch-mbedtls && break
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            echo "dkp-pacman attempt $attempt failed; retrying in 5s..."
+            sleep 5
+          done
 
       - name: Build launcher
         env:

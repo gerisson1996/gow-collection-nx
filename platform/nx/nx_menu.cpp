@@ -22,54 +22,56 @@ bool g_pad_ok = false;
 int g_sel = 0;
 uint32_t g_val[nxopt::COUNT] = {};
 bool g_dirty = true;
+bool g_confirm_exit = false;
 int g_hold = 0, g_hold_dir = 0;
 
 enum Lang { LANG_EN = 0, LANG_ES, LANG_PT, LANG_FR, LANG_IT, LANG_DE, LANG_COUNT };
 
 struct MenuTexts {
-    const char *items[7]; // RES, FPS, VSYNC, COUNTER, TEX, HPBARS, fechar
+    const char *items[8]; // RES, FPS, VSYNC, COUNTER, TEX, HPBARS, fechar, sair
     const char *fps_max;
     const char *on;
     const char *off;
     const char *unavail;
+    const char *confirm_exit;
     const char *hint;
 };
 
 const MenuTexts kTexts[LANG_COUNT] = {
     // LANG_EN
     {
-        {"Internal resolution", "Frame rate", "VSync", "FPS counter", "HD textures", "Enemy health bars", "Close menu"},
-        "Max", "On", "Off", "Unavailable",
+        {"Internal resolution", "Frame rate", "VSync", "FPS counter", "HD textures", "Enemy health bars", "Close menu", "Exit game"},
+        "Max", "On", "Off", "Unavailable", "Press A to confirm",
         "Up/Down: select     Left/Right: change     B: close",
     },
     // LANG_ES
     {
-        {"Resolución interna", "Tasa de cuadros", "VSync", "Contador de FPS", "Texturas HD", "Barras de vida enemigas", "Cerrar menú"},
-        "Máximo", "Activado", "Desactivado", "No disponible",
+        {"Resolución interna", "Tasa de cuadros", "VSync", "Contador de FPS", "Texturas HD", "Barras de vida enemigas", "Cerrar menú", "Salir del juego"},
+        "Máximo", "Activado", "Desactivado", "No disponible", "Pulsa A para confirmar",
         "Arriba/Abajo: elegir   Izq/Der: cambiar   B: cerrar",
     },
     // LANG_PT
     {
-        {"Resolução interna", "Taxa de quadros", "VSync", "Contador de FPS", "Texturas HD", "Barras de vida dos inimigos", "Fechar menu"},
-        "Máximo", "Ligado", "Desligado", "Indisponível",
+        {"Resolução interna", "Taxa de quadros", "VSync", "Contador de FPS", "Texturas HD", "Barras de vida dos inimigos", "Fechar menu", "Sair do jogo"},
+        "Máximo", "Ligado", "Desligado", "Indisponível", "Aperte A para confirmar",
         "Cima/Baixo: escolher   Esq/Dir: mudar   B: fechar",
     },
     // LANG_FR
     {
-        {"Résolution interne", "Images par seconde", "VSync", "Compteur de FPS", "Textures HD", "Barres de vie ennemies", "Fermer le menu"},
-        "Max", "Activé", "Désactivé", "Indisponible",
+        {"Résolution interne", "Images par seconde", "VSync", "Compteur de FPS", "Textures HD", "Barres de vie ennemies", "Fermer le menu", "Quitter le jeu"},
+        "Max", "Activé", "Désactivé", "Indisponible", "Appuyez sur A (confirmer)",
         "Haut/Bas: choisir   Gauche/Droite: changer   B: fermer",
     },
     // LANG_IT
     {
-        {"Risoluzione interna", "Frequenza fotogrammi", "VSync", "Contatore FPS", "Texture HD", "Barre vita nemici", "Chiudi menu"},
-        "Massimo", "Attivato", "Disattivato", "Non disponibile",
+        {"Risoluzione interna", "Frequenza fotogrammi", "VSync", "Contatore FPS", "Texture HD", "Barre vita nemici", "Chiudi menu", "Esci dal gioco"},
+        "Massimo", "Attivato", "Disattivato", "Non disponibile", "Premi A per confermare",
         "Su/Giù: scegli   Sinistra/Destra: cambia   B: chiudi",
     },
     // LANG_DE
     {
-        {"Interne Auflösung", "Bildrate", "VSync", "FPS-Zähler", "HD-Texturen", "Gegner-Lebensleisten", "Menü schließen"},
-        "Maximum", "Ein", "Aus", "Nicht verfügbar",
+        {"Interne Auflösung", "Bildrate", "VSync", "FPS-Zähler", "HD-Texturen", "Gegner-Lebensleisten", "Menü schließen", "Spiel beenden"},
+        "Maximum", "Ein", "Aus", "Nicht verfügbar", "A zum Bestätigen",
         "Hoch/Runter: wählen  Links/Rechts: ändern  B: schließen",
     },
 };
@@ -135,9 +137,10 @@ int load_lang() {
     return sys_lang;
 }
 
-constexpr int kItemIds[] = {nxopt::RES, nxopt::FPS, nxopt::VSYNC, nxopt::COUNTER, nxopt::TEX, nxopt::HPBARS, -1};
+constexpr int kActClose = -1, kActExit = -2;
+constexpr int kItemIds[] = {nxopt::RES, nxopt::FPS, nxopt::VSYNC, nxopt::COUNTER, nxopt::TEX, nxopt::HPBARS, kActClose, kActExit};
 constexpr int kN = (int)(sizeof kItemIds / sizeof kItemIds[0]);
-static_assert(kN == 7);
+static_assert(kN == 8);
 
 // resolução: ordem do menu -> código da opção (5 = 720p)
 const uint32_t kRes[] = {1, 6, 5, 2, 3, 4};
@@ -190,10 +193,14 @@ void open() {
     }
     for (int i = 0; i < nxopt::COUNT; i++) g_val[i] = nxopt::get(i);
     if (!item_ok(g_sel)) g_sel = 0;
+    g_confirm_exit = false;
+    g_hold = 0;
+    g_hold_dir = 0;
     g_active = true, g_block = true, g_dirty = true;
     vt::logf("nxmenu: aberto");
 }
 void close() {
+    g_confirm_exit = false;
     g_active = false, g_dirty = true;
     vt::logf("nxmenu: fechado");
 }
@@ -211,6 +218,7 @@ void change(int dir) {
     g_dirty = true;
 }
 void move(int dir) {
+    g_confirm_exit = false;
     for (int k = 0; k < kN; k++) {
         g_sel = (g_sel + dir + kN) % kN;
         if (item_ok(g_sel)) break;
@@ -239,7 +247,14 @@ void update() {
     }
     if (down & (HidNpadButton_B | HidNpadButton_Plus)) { close(); return; }
     if (down & HidNpadButton_A) {
-        if (kItemIds[g_sel] < 0) { close(); return; }
+        const int id = kItemIds[g_sel];
+        if (id == kActClose) { close(); return; }
+        if (id == kActExit) {
+            if (!g_confirm_exit) { g_confirm_exit = true; g_dirty = true; g_hold = 0; g_hold_dir = 0; return; }
+            close();
+            nxp::request_exit();
+            return;
+        }
         change(+1);
     }
     if (down & HidNpadButton_AnyLeft) change(-1);
@@ -371,6 +386,8 @@ void draw(uint32_t screen_h) {
             if (sel && ok) v = "<  " + v + "  >";
             const uint32_t vc = !ok ? off : sel ? gold : white;
             text((int)g_w - S(30) - text_w(v.c_str(), S(22)), base, v.c_str(), S(22), vc);
+        } else if (id == kActExit && sel && g_confirm_exit) {
+            text((int)g_w - S(30) - text_w(t.confirm_exit, S(20)), base, t.confirm_exit, S(20), gold);
         }
     }
     const int fy = (int)g_h - foot;

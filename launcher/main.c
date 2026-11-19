@@ -11,6 +11,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <mpg123.h>
+#include "trophies.h"
 #ifdef ENABLE_UPDATER
 #include "updater.h"
 #endif
@@ -43,6 +44,7 @@ typedef struct {
     const char *btn_jogar;
     const char *btn_abrir;
     const char *btn_sair;
+    const char *menu_sair;
     const char *btn_mudar;
     const char *btn_salvar;
     const char *upd_menu;
@@ -66,6 +68,18 @@ typedef struct {
     const char *btn_reiniciar;
     const char *btn_cancelar;
     const char *btn_voltar;
+    const char *trp_menu;
+    const char *trp_titulo;
+    const char *trp_oculto;
+    const char *trp_oculto_desc;
+    const char *trp_sem_trp;
+    const char *trp_vazio;
+    const char *trp_filtros[3];
+    const char *trp_graus[4];
+    const char *trp_desbloq;
+    const char *trp_btn_jogo;
+    const char *trp_btn_filtro;
+    const char *trp_btn_spoil;
 } Textos;
 
 static const Textos kTextos[NLANG] = {
@@ -92,6 +106,7 @@ static const Textos kTextos[NLANG] = {
         .btn_jogar = " Play",
         .btn_abrir = " Open",
         .btn_sair = " Exit",
+        .menu_sair = "Exit",
         .btn_mudar = " Change",
         .btn_salvar = " Save and back",
         .upd_menu = "Check for updates",
@@ -115,6 +130,18 @@ static const Textos kTextos[NLANG] = {
         .btn_reiniciar = " Restart",
         .btn_cancelar = " Cancel",
         .btn_voltar = " Back",
+        .trp_menu = "Trophies",
+        .trp_titulo = "TROPHIES",
+        .trp_oculto = "Hidden trophy",
+        .trp_oculto_desc = "Press Y to reveal hidden trophy details.",
+        .trp_sem_trp = "TROPHY.TRP not found in game/PCSA00126/sce_sys/trophy/.",
+        .trp_vazio = "No trophies match this filter.",
+        .trp_filtros = { "All", "Unlocked", "Locked" },
+        .trp_graus = { "Platinum", "Gold", "Silver", "Bronze" },
+        .trp_desbloq = "Unlocked",
+        .trp_btn_jogo = " Game",
+        .trp_btn_filtro = " Filter",
+        .trp_btn_spoil = " Hidden",
     },
     [LANG_ES] = {
         .nome_idioma = "Español",
@@ -139,6 +166,7 @@ static const Textos kTextos[NLANG] = {
         .btn_jogar = " Jugar",
         .btn_abrir = " Abrir",
         .btn_sair = " Salir",
+        .menu_sair = "Salir",
         .btn_mudar = " Cambiar",
         .btn_salvar = " Guardar y volver",
         .upd_menu = "Buscar actualizaciones",
@@ -162,6 +190,18 @@ static const Textos kTextos[NLANG] = {
         .btn_reiniciar = " Reiniciar",
         .btn_cancelar = " Cancelar",
         .btn_voltar = " Volver",
+        .trp_menu = "Trofeos",
+        .trp_titulo = "TROFEOS",
+        .trp_oculto = "Trofeo oculto",
+        .trp_oculto_desc = "Pulsa Y para ver los detalles de trofeos ocultos.",
+        .trp_sem_trp = "No se encontró TROPHY.TRP en game/PCSA00126/sce_sys/trophy/.",
+        .trp_vazio = "No hay trofeos para este filtro.",
+        .trp_filtros = { "Todos", "Desbloqueados", "Pendientes" },
+        .trp_graus = { "Platino", "Oro", "Plata", "Bronce" },
+        .trp_desbloq = "Desbloqueado",
+        .trp_btn_jogo = " Juego",
+        .trp_btn_filtro = " Filtro",
+        .trp_btn_spoil = " Ocultos",
     },
     [LANG_PT] = {
         .nome_idioma = "Português (BR)",
@@ -186,6 +226,7 @@ static const Textos kTextos[NLANG] = {
         .btn_jogar = " Jogar",
         .btn_abrir = " Abrir",
         .btn_sair = " Sair",
+        .menu_sair = "Sair",
         .btn_mudar = " Mudar",
         .btn_salvar = " Salvar e voltar",
         .upd_menu = "Buscar atualizações",
@@ -209,6 +250,18 @@ static const Textos kTextos[NLANG] = {
         .btn_reiniciar = " Reiniciar",
         .btn_cancelar = " Cancelar",
         .btn_voltar = " Voltar",
+        .trp_menu = "Troféus",
+        .trp_titulo = "TROFÉUS",
+        .trp_oculto = "Troféu oculto",
+        .trp_oculto_desc = "Aperte Y para revelar os detalhes dos troféus ocultos.",
+        .trp_sem_trp = "TROPHY.TRP não encontrado em game/PCSA00126/sce_sys/trophy/.",
+        .trp_vazio = "Nenhum troféu corresponde a este filtro.",
+        .trp_filtros = { "Todos", "Desbloqueados", "Bloqueados" },
+        .trp_graus = { "Platina", "Ouro", "Prata", "Bronze" },
+        .trp_desbloq = "Desbloqueado",
+        .trp_btn_jogo = " Jogo",
+        .trp_btn_filtro = " Filtro",
+        .trp_btn_spoil = " Ocultos",
     },
     [LANG_FR] = {
         .nome_idioma = "Français",
@@ -233,6 +286,7 @@ static const Textos kTextos[NLANG] = {
         .btn_jogar = " Jouer",
         .btn_abrir = " Ouvrir",
         .btn_sair = " Quitter",
+        .menu_sair = "Quitter",
         .btn_mudar = " Changer",
         .btn_salvar = " Enregistrer et retour",
         .upd_menu = "Rechercher des mises à jour",
@@ -256,6 +310,18 @@ static const Textos kTextos[NLANG] = {
         .btn_reiniciar = " Redémarrer",
         .btn_cancelar = " Annuler",
         .btn_voltar = " Retour",
+        .trp_menu = "Trophées",
+        .trp_titulo = "TROPHÉES",
+        .trp_oculto = "Trophée masqué",
+        .trp_oculto_desc = "Appuyez sur Y pour afficher les trophées masqués.",
+        .trp_sem_trp = "TROPHY.TRP introuvable dans game/PCSA00126/sce_sys/trophy/.",
+        .trp_vazio = "Aucun trophée pour ce filtre.",
+        .trp_filtros = { "Tous", "Débloqués", "Verrouillés" },
+        .trp_graus = { "Platine", "Or", "Argent", "Bronze" },
+        .trp_desbloq = "Débloqué",
+        .trp_btn_jogo = " Jeu",
+        .trp_btn_filtro = " Filtre",
+        .trp_btn_spoil = " Masqués",
     },
     [LANG_IT] = {
         .nome_idioma = "Italiano",
@@ -280,6 +346,7 @@ static const Textos kTextos[NLANG] = {
         .btn_jogar = " Gioca",
         .btn_abrir = " Apri",
         .btn_sair = " Esci",
+        .menu_sair = "Esci",
         .btn_mudar = " Cambia",
         .btn_salvar = " Salva e torna",
         .upd_menu = "Cerca aggiornamenti",
@@ -303,6 +370,18 @@ static const Textos kTextos[NLANG] = {
         .btn_reiniciar = " Riavvia",
         .btn_cancelar = " Annulla",
         .btn_voltar = " Indietro",
+        .trp_menu = "Trofei",
+        .trp_titulo = "TROFEI",
+        .trp_oculto = "Trofeo nascosto",
+        .trp_oculto_desc = "Premi Y per mostrare i dettagli dei trofei nascosti.",
+        .trp_sem_trp = "TROPHY.TRP non trovato in game/PCSA00126/sce_sys/trophy/.",
+        .trp_vazio = "Nessun trofeo per questo filtro.",
+        .trp_filtros = { "Tutti", "Sbloccati", "Bloccati" },
+        .trp_graus = { "Platino", "Oro", "Argento", "Bronzo" },
+        .trp_desbloq = "Sbloccato",
+        .trp_btn_jogo = " Gioco",
+        .trp_btn_filtro = " Filtro",
+        .trp_btn_spoil = " Nascosti",
     },
     [LANG_DE] = {
         .nome_idioma = "Deutsch",
@@ -327,6 +406,7 @@ static const Textos kTextos[NLANG] = {
         .btn_jogar = " Spielen",
         .btn_abrir = " Öffnen",
         .btn_sair = " Beenden",
+        .menu_sair = "Beenden",
         .btn_mudar = " Ändern",
         .btn_salvar = " Speichern & zurück",
         .upd_menu = "Nach Updates suchen",
@@ -350,6 +430,18 @@ static const Textos kTextos[NLANG] = {
         .btn_reiniciar = " Neustarten",
         .btn_cancelar = " Abbrechen",
         .btn_voltar = " Zurück",
+        .trp_menu = "Trophäen",
+        .trp_titulo = "TROPHÄEN",
+        .trp_oculto = "Versteckte Trophäe",
+        .trp_oculto_desc = "Drücke Y, um versteckte Trophäen anzuzeigen.",
+        .trp_sem_trp = "TROPHY.TRP nicht in game/PCSA00126/sce_sys/trophy/ gefunden.",
+        .trp_vazio = "Keine Trophäen für diesen Filter.",
+        .trp_filtros = { "Alle", "Freigeschaltet", "Gesperrt" },
+        .trp_graus = { "Platin", "Gold", "Silber", "Bronze" },
+        .trp_desbloq = "Freigeschaltet",
+        .trp_btn_jogo = " Spiel",
+        .trp_btn_filtro = " Filter",
+        .trp_btn_spoil = " Versteckte",
     },
 };
 
@@ -374,16 +466,21 @@ static int detectar_idioma_switch(void) {
     return LANG_EN;
 }
 
-typedef struct { const char *titulo, *arquivo; } Jogo;
+typedef struct { const char *titulo, *arquivo, *trp_comm; } Jogo;
 static const Jogo jogos[] = {
-    { "God of War", "gow1.nro" },
-    { "God of War II", "gow2.nro" },
+    { "God of War", "gow1.nro", "NPWR05244_00" },
+    { "God of War II", "gow2.nro", "NPWR05283_00" },
 };
 #define N (int)(sizeof jogos / sizeof jogos[0])
+#define ITEM_TROFEUS N
+#define ITEM_OPCOES  (N + 1)
 #ifdef ENABLE_UPDATER
-#define NMENU (N + 2)
+#define ITEM_UPD     (N + 2)
+#define ITEM_SAIR    (N + 3)
+#define NMENU        (N + 4)
 #else
-#define NMENU (N + 1)
+#define ITEM_SAIR    (N + 2)
+#define NMENU        (N + 3)
 #endif
 static int jogo_ok[N];
 
@@ -393,6 +490,7 @@ static int romfs_ativo = 0;
 
 static int existe(const char *p) { struct stat st; return stat(p, &st) == 0; }
 
+#ifdef ENABLE_UPDATER
 // Copia um arquivo do romfs:/ para a pasta do launcher no SD (se ainda não existir lá).
 // Usado antes de uma atualização, para a capa/música sobreviverem a um .nro sem esses arquivos embutidos.
 static void salvar_asset_no_sd(const char *nome) {
@@ -415,6 +513,7 @@ static void salvar_asset_no_sd(const char *nome) {
     if (ok) ok = rename(tmp, dst) == 0;
     if (!ok) remove(tmp);
 }
+#endif
 static void caminho(char *out, size_t n, int i) { snprintf(out, n, "%.700s%s", dir, jogos[i].arquivo); }
 static void atualizar_jogos(void) {
     for (int i = 0; i < N; i++) {
@@ -749,7 +848,285 @@ static void retangulo(int x, int y, int w, int h, u32 cor, int a) {
 
 #define RGB(r, g, b) ((u32)(r) | (u32)(g) << 8 | (u32)(b) << 16)
 static const u32 OURO = RGB(236, 178, 74), OURO_ESC = RGB(150, 92, 30), CINZA = RGB(190, 180, 165),
-                 BRANCO = RGB(240, 232, 220), VERMELHO = RGB(230, 80, 60);
+                 BRANCO = RGB(240, 232, 220), VERMELHO = RGB(230, 80, 60),
+                 PLATINA = RGB(165, 220, 255), PRATA = RGB(202, 210, 222), BRONZE = RGB(205, 134, 82),
+                 VERDE = RGB(115, 210, 120);
+
+static int texto_largura(int tam, const char *s) {
+    if (!f_txt || !s) return 0;
+    FT_Set_Pixel_Sizes(f_txt, 0, tam);
+    int w = 0;
+    while (*s) {
+        u32 c = utf8(&s);
+        FT_Face f = (c >= 0xE000 && c <= 0xF8FF && f_ext && FT_Get_Char_Index(f_ext, c)) ? f_ext : f_txt;
+        FT_Set_Pixel_Sizes(f, 0, tam);
+        if (!FT_Load_Char(f, c, FT_LOAD_DEFAULT)) w += f->glyph->advance.x >> 6;
+    }
+    return w;
+}
+
+static void texto_trunc(int x, int y, int tam, u32 cor, int alfa, const char *s, int max_w) {
+    if (!s || !*s) return;
+    if (texto_largura(tam, s) <= max_w) {
+        texto_sombra(x, y, tam, cor, alfa, s);
+        return;
+    }
+    char buf[384];
+    int ew = texto_largura(tam, "...");
+    int cur = 0;
+    size_t out = 0;
+    const char *p = s;
+    while (*p && out + 8 < sizeof buf) {
+        const char *prev = p;
+        u32 c = utf8(&p);
+        int adv = 0;
+        if (f_txt) {
+            FT_Set_Pixel_Sizes(f_txt, 0, tam);
+            if (!FT_Load_Char(f_txt, c, FT_LOAD_DEFAULT)) adv = f_txt->glyph->advance.x >> 6;
+        }
+        if (cur + adv + ew > max_w) break;
+        size_t clen = (size_t)(p - prev);
+        if (out + clen + 4 >= sizeof buf) break;
+        memcpy(buf + out, prev, clen);
+        out += clen;
+        cur += adv;
+    }
+    while (out > 0 && buf[out - 1] == ' ') out--;
+    memcpy(buf + out, "...", 4);
+    texto_sombra(x, y, tam, cor, alfa, buf);
+}
+
+static void texto_wrap2(int x, int y, int tam, int dy, u32 cor, int alfa, const char *s, int max_w) {
+    if (!s || !*s) return;
+    if (texto_largura(tam, s) <= max_w) {
+        texto_sombra(x, y, tam, cor, alfa, s);
+        return;
+    }
+    char l1[256];
+    const char *p = s, *last_sp = NULL, *cut = s;
+    int cur = 0;
+    while (*p) {
+        const char *prev = p;
+        u32 c = utf8(&p);
+        int adv = 0;
+        if (f_txt) {
+            FT_Set_Pixel_Sizes(f_txt, 0, tam);
+            if (!FT_Load_Char(f_txt, c, FT_LOAD_DEFAULT)) adv = f_txt->glyph->advance.x >> 6;
+        }
+        if (cur + adv > max_w) {
+            cut = last_sp ? last_sp : prev;
+            break;
+        }
+        cur += adv;
+        if (c == ' ') last_sp = prev;
+        cut = p;
+    }
+    size_t n1 = (size_t)(cut - s);
+    if (n1 >= sizeof l1) n1 = sizeof l1 - 1;
+    memcpy(l1, s, n1);
+    l1[n1] = 0;
+    texto_sombra(x, y, tam, cor, alfa, l1);
+    while (*cut == ' ') cut++;
+    if (*cut) texto_trunc(x, y + dy, tam, cor, alfa, cut, max_w);
+}
+
+static void barra_progresso(int x, int y, int w, int h, float frac, int indet, u64 tick) {
+    retangulo(x, y, w, h, 0x000000, 170);
+    retangulo(x, y, w, 2, OURO_ESC, 220);
+    retangulo(x, y + h - 2, w, 2, OURO_ESC, 220);
+    retangulo(x, y, 2, h, OURO_ESC, 220);
+    retangulo(x + w - 2, y, 2, h, OURO_ESC, 220);
+    int iw = w - 6, ih = h - 6;
+    if (indet) {
+        int bw = iw / 4;
+        int ox = (int)((tick * 6) % (u64)(iw + bw)) - bw;
+        int x0 = ox < 0 ? 0 : ox;
+        int x1 = ox + bw > iw ? iw : ox + bw;
+        if (x1 > x0) retangulo(x + 3 + x0, y + 3, x1 - x0, ih, OURO, 230);
+    } else {
+        if (frac < 0.f) frac = 0.f;
+        if (frac > 1.f) frac = 1.f;
+        int fw = (int)(iw * frac + 0.5f);
+        if (fw > 0) retangulo(x + 3, y + 3, fw, ih, OURO, 235);
+    }
+}
+
+static u32 cor_grau(char g) {
+    switch (g) {
+    case 'P': return PLATINA;
+    case 'G': return OURO;
+    case 'S': return PRATA;
+    default:  return BRONZE;
+    }
+}
+
+static int idx_grau(char g) {
+    switch (g) {
+    case 'P': return 0;
+    case 'G': return 1;
+    case 'S': return 2;
+    default:  return 3;
+    }
+}
+
+static void desenhar_icone_trofeu(int x, int y, const TrophyItem *it, int mostrar_ocultos) {
+    int oculto = it->hidden && !it->unlocked && !mostrar_ocultos;
+    u32 borda = it->unlocked ? cor_grau(it->grade) : RGB(80, 74, 68);
+    retangulo(x - 1, y - 1, TRP_ICON_SZ + 2, TRP_ICON_SZ + 2, borda, it->unlocked ? 235 : 140);
+    retangulo(x, y, TRP_ICON_SZ, TRP_ICON_SZ, RGB(18, 15, 13), 235);
+    if (oculto || !it->icon) {
+        const char *m = oculto ? "?" : (it->grade == 'P' ? "P" : it->grade == 'G' ? "G" : it->grade == 'S' ? "S" : "B");
+        int mw = texto_largura(24, m);
+        texto_sombra(x + (TRP_ICON_SZ - mw) / 2, y + 34, 24, oculto ? CINZA : borda, 210, m);
+        return;
+    }
+    for (int yy = 0; yy < TRP_ICON_SZ; yy++) {
+        for (int xx = 0; xx < TRP_ICON_SZ; xx++) {
+            u32 c = it->icon[yy * TRP_ICON_SZ + xx];
+            int a = (int)(c >> 24);
+            if (!a) continue;
+            int r = (int)(c & 0xff), g = (int)((c >> 8) & 0xff), b = (int)((c >> 16) & 0xff);
+            if (!it->unlocked) {
+                int lum = (r * 77 + g * 150 + b * 29) >> 8;
+                lum = lum * 45 / 100;
+                r = g = b = lum;
+            }
+            mistura(x + xx, y + yy, RGB(r, g, b), a);
+        }
+    }
+}
+
+static int filtrar_trofeus(const TrophySet *set, int filtro, int *vis) {
+    int n = 0;
+    for (int i = 0; i < set->count; i++) {
+        if (filtro == 1 && !set->items[i].unlocked) continue;
+        if (filtro == 2 && set->items[i].unlocked) continue;
+        vis[n++] = i;
+    }
+    return n;
+}
+
+static void assinatura(int yb);
+
+static void desenhar_trofeus(const TrophySet *set, int jogo_idx, int filtro, int mostrar_ocultos,
+                             int sel_idx, int scroll, u64 tick) {
+    const Textos *t = txt();
+    if (bg) { for (int y = 0; y < H; y++) memcpy(&px[y * pitch], &bg[y * W], W * 4); }
+    else { for (int y = 0; y < H; y++) memset(&px[y * pitch], 0, W * 4); }
+    retangulo(0, 0, W, H, 0x000000, 150);
+    float pulso = 0.5f + 0.5f * sinf(tick * 0.06f);
+
+    // Cabeçalho com abas dos 2 jogos e resumo de progresso
+    texto_sombra(72, 68, 26, OURO, 255, t->trp_titulo);
+    int tx = 260;
+    for (int i = 0; i < N; i++) {
+        int a = (i == jogo_idx);
+        int tw = texto_largura(22, jogos[i].titulo);
+        if (a) {
+            retangulo(tx - 12, 42, tw + 24, 34, OURO_ESC, 120);
+            retangulo(tx - 12, 74, tw + 24, 3, OURO, 240);
+        }
+        texto_sombra(tx, 66, 22, a ? BRANCO : CINZA, a ? 255 : 170, jogos[i].titulo);
+        tx += tw + 42;
+    }
+
+    // Filtro atual no canto superior direito
+    char fbuf[64];
+    snprintf(fbuf, sizeof fbuf, "[ %s ]", t->trp_filtros[filtro]);
+    texto_sombra(W - 72 - texto_largura(20, fbuf), 66, 20, OURO, 235, fbuf);
+    retangulo(72, 84, W - 144, 2, OURO_ESC, 180);
+
+    if (!set->loaded) {
+        texto_sombra(72, 220, 24, VERMELHO, 255, t->trp_sem_trp);
+        char ex[256];
+        snprintf(ex, sizeof ex, "game/PCSA00126/sce_sys/trophy/%s/TROPHY.TRP", jogos[jogo_idx].trp_comm);
+        texto_sombra(72, 262, 19, CINZA, 210, ex);
+    } else {
+        int pct = trp_percent(set);
+        char sum[128];
+        snprintf(sum, sizeof sum, "%d / %d  (%d%%)", set->unlocked_count, set->count, pct);
+        texto_sombra(72, 118, 22, BRANCO, 250, sum);
+        barra_progresso(280, 100, 400, 20, (float)pct / 100.f, 0, tick);
+
+        // Contadores por grau (P / G / S / B)
+        static const char *const gsym[4] = { "P", "G", "S", "B" };
+        static const char gchr[4] = { 'P', 'G', 'S', 'B' };
+        int gx = 710;
+        for (int g = 0; g < 4; g++) {
+            char gb[32];
+            snprintf(gb, sizeof gb, "%s %d/%d", gsym[g], set->grade_have[g], set->grade_total[g]);
+            gx += texto_sombra(gx, 118, 19, cor_grau(gchr[g]), 240, gb) + 26;
+        }
+
+        int vis[TRP_MAX_TROPHIES];
+        int nvis = filtrar_trofeus(set, filtro, vis);
+        if (nvis == 0) {
+            texto_sombra(72, 220, 24, CINZA, 230, t->trp_vazio);
+        } else {
+            const int vis_rows = 6, row_h = 68, y0 = 144;
+            for (int r = 0; r < vis_rows && scroll + r < nvis; r++) {
+                int vi = scroll + r;
+                const TrophyItem *it = &set->items[vis[vi]];
+                int y = y0 + r * row_h;
+                int s = (vi == sel_idx);
+                if (s) {
+                    retangulo(72, y, W - 160, row_h - 6, OURO_ESC, 95);
+                    retangulo(72, y, 5, row_h - 6, OURO, 160 + (int)(95 * pulso));
+                } else {
+                    retangulo(72, y, W - 160, row_h - 6, RGB(18, 15, 13), 135);
+                }
+
+                desenhar_icone_trofeu(88, y + 5, it, mostrar_ocultos);
+
+                int oculto = it->hidden && !it->unlocked && !mostrar_ocultos;
+                const char *nm = oculto ? t->trp_oculto : it->name;
+                const char *ds = oculto ? t->trp_oculto_desc : it->detail;
+                u32 nc = it->unlocked ? (s ? OURO : BRANCO) : (s ? BRANCO : CINZA);
+                texto_trunc(156, y + 26, 22, nc, it->unlocked || s ? 255 : 195, nm, 760);
+                texto_trunc(156, y + 50, 17, CINZA, s ? 230 : 175, ds, 760);
+
+                // Grau + estado à direita
+                const char *gname = t->trp_graus[idx_grau(it->grade)];
+                int gw = texto_largura(18, gname);
+                texto_sombra(W - 104 - gw, y + 26, 18, cor_grau(it->grade), it->unlocked ? 255 : 170, gname);
+                if (it->unlocked) {
+                    int dw = texto_largura(16, t->trp_desbloq);
+                    texto_sombra(W - 104 - dw, y + 48, 16, VERDE, 235, t->trp_desbloq);
+                }
+            }
+
+            // Barra de rolagem lateral
+            if (nvis > vis_rows) {
+                int sx = W - 78, sy = y0, sh = vis_rows * row_h - 6;
+                retangulo(sx, sy, 6, sh, RGB(60, 54, 48), 160);
+                int bh = sh * vis_rows / nvis;
+                if (bh < 24) bh = 24;
+                int by = sy + (sh - bh) * scroll / (nvis - vis_rows);
+                retangulo(sx, by, 6, bh, OURO, 220);
+            }
+
+            // Cartão inferior com a descrição completa do troféu selecionado
+            if (sel_idx >= 0 && sel_idx < nvis) {
+                const TrophyItem *it = &set->items[vis[sel_idx]];
+                int oculto = it->hidden && !it->unlocked && !mostrar_ocultos;
+                retangulo(72, 560, W - 144, 78, RGB(14, 11, 10), 200);
+                retangulo(72, 560, W - 144, 2, OURO_ESC, 180);
+                texto_wrap2(90, 588, 19, 25, BRANCO, 235, oculto ? t->trp_oculto_desc : it->detail, W - 180);
+            }
+        }
+    }
+
+    int x = 72, yb = 676;
+    x += texto_sombra(x, yb, 26, BRANCO, 255, "\xEE\x83\xA4/\xEE\x83\xA5"); // L/R
+    x += texto_sombra(x + 4, yb, 20, BRANCO, 230, t->trp_btn_jogo) + 28;
+    x += texto_sombra(x, yb, 26, BRANCO, 255, "\xEE\x83\xA2");             // X
+    x += texto_sombra(x + 4, yb, 20, BRANCO, 230, t->trp_btn_filtro) + 28;
+    x += texto_sombra(x, yb, 26, BRANCO, 255, "\xEE\x83\xA3");             // Y
+    x += texto_sombra(x + 4, yb, 20, BRANCO, 230, t->trp_btn_spoil) + 28;
+    x += texto_sombra(x, yb, 26, BRANCO, 255, "\xEE\x83\xA1");             // B
+    texto_sombra(x + 4, yb, 20, BRANCO, 230, t->btn_voltar);
+    assinatura(yb);
+}
 
 static void assinatura(int yb) {
     if (!f_txt) return;
@@ -794,27 +1171,6 @@ static void desenhar_opcoes(int sel, int msg, u64 tick) {
 }
 
 #ifdef ENABLE_UPDATER
-static void barra_progresso(int x, int y, int w, int h, float frac, int indet, u64 tick) {
-    retangulo(x, y, w, h, 0x000000, 170);
-    retangulo(x, y, w, 2, OURO_ESC, 220);
-    retangulo(x, y + h - 2, w, 2, OURO_ESC, 220);
-    retangulo(x, y, 2, h, OURO_ESC, 220);
-    retangulo(x + w - 2, y, 2, h, OURO_ESC, 220);
-    int iw = w - 6, ih = h - 6;
-    if (indet) {
-        int bw = iw / 4;
-        int ox = (int)((tick * 6) % (u64)(iw + bw)) - bw;
-        int x0 = ox < 0 ? 0 : ox;
-        int x1 = ox + bw > iw ? iw : ox + bw;
-        if (x1 > x0) retangulo(x + 3 + x0, y + 3, x1 - x0, ih, OURO, 230);
-    } else {
-        if (frac < 0.f) frac = 0.f;
-        if (frac > 1.f) frac = 1.f;
-        int fw = (int)(iw * frac + 0.5f);
-        if (fw > 0) retangulo(x + 3, y + 3, fw, ih, OURO, 235);
-    }
-}
-
 static void desenhar_atualizador(const UpdStatus *st, u64 tick) {
     const Textos *t = txt();
     if (bg) { for (int y = 0; y < H; y++) memcpy(&px[y * pitch], &bg[y * W], W * 4); }
@@ -921,46 +1277,47 @@ static void desenhar(int sel, int msg, u64 tick) {
     else { for (int y = 0; y < H; y++) memset(&px[y * pitch], 0, W * 4); }
     float pulso = 0.5f + 0.5f * sinf(tick * 0.06f);
 
-    texto_sombra(110, 250, 26, CINZA, 255, t->escolher);
-    retangulo(110, 264, 260, 2, OURO_ESC, 200);
-
-    {   // item das opções, abaixo dos jogos
-        int y = 340 + N * 110 - 20, s = sel == N;
-        if (s) {
-            for (int x = 96; x < 560; x++) retangulo(x, y - 34, 1, 48, OURO_ESC, 80 * (560 - x) / 464);
-            retangulo(90, y - 34, 5, 48, OURO, 150 + (int)(105 * pulso));
-        }
-        texto_sombra(120, y, s ? 30 : 26, s ? OURO : CINZA, s ? 255 : 200, t->opcoes_menu);
-    }
-#ifdef ENABLE_UPDATER
-    {   // item do atualizador, abaixo de Opções
-        int y = 340 + N * 110 + 34, s = sel == N + 1;
-        if (s) {
-            for (int x = 96; x < 560; x++) retangulo(x, y - 34, 1, 48, OURO_ESC, 80 * (560 - x) / 464);
-            retangulo(90, y - 34, 5, 48, OURO, 150 + (int)(105 * pulso));
-        }
-        texto_sombra(120, y, s ? 30 : 26, s ? OURO : CINZA, s ? 255 : 200, t->upd_menu);
-    }
-#endif
+    texto_sombra(110, 178, 26, CINZA, 255, t->escolher);
+    retangulo(110, 192, 260, 2, OURO_ESC, 200);
 
     for (int i = 0; i < N; i++) {
-        int y = 340 + i * 110;
+        int y = 260 + i * 98;
         int ok = jogo_ok[i], s = i == sel;
         if (s) {
-            for (int x = 96; x < 560; x++) retangulo(x, y - 50, 1, 82, OURO_ESC, 80 * (560 - x) / 464);
-            retangulo(90, y - 50, 6, 82, OURO, 150 + (int)(105 * pulso));
+            for (int x = 96; x < 560; x++) retangulo(x, y - 48, 1, 80, OURO_ESC, 80 * (560 - x) / 464);
+            retangulo(90, y - 48, 6, 80, OURO, 150 + (int)(105 * pulso));
         }
-        texto_sombra(120, y, s ? 48 : 42, s ? OURO : CINZA, s ? 255 : 200, jogos[i].titulo);
+        texto_sombra(120, y, s ? 46 : 40, s ? OURO : CINZA, s ? 255 : 200, jogos[i].titulo);
         texto_sombra(122, y + 26, 20, ok ? (s ? BRANCO : CINZA) : VERMELHO, s ? 230 : 160,
                      ok ? t->sub_jogos[i] : t->falta_arq);
+    }
+
+    {   // Itens secundários (Troféus, Opções, Atualizador, Sair)
+        const char *rotulos[4];
+        int ids[4], nsec = 0;
+        rotulos[nsec] = t->trp_menu;    ids[nsec++] = ITEM_TROFEUS;
+        rotulos[nsec] = t->opcoes_menu; ids[nsec++] = ITEM_OPCOES;
+#ifdef ENABLE_UPDATER
+        rotulos[nsec] = t->upd_menu;    ids[nsec++] = ITEM_UPD;
+#endif
+        rotulos[nsec] = t->menu_sair;   ids[nsec++] = ITEM_SAIR;
+        for (int i = 0; i < nsec; i++) {
+            int y = 432 + i * 46, s = sel == ids[i];
+            if (s) {
+                for (int x = 96; x < 560; x++) retangulo(x, y - 30, 1, 42, OURO_ESC, 80 * (560 - x) / 464);
+                retangulo(90, y - 30, 5, 42, OURO, 150 + (int)(105 * pulso));
+            }
+            texto_sombra(120, y, s ? 28 : 24, s ? OURO : CINZA, s ? 255 : 200, rotulos[i]);
+        }
     }
 
     const char *ms = msg_texto(msg);
     if (ms) texto_sombra(110, 640, 22, VERMELHO, 255, ms);
 
     int x = 110, yb = 676;
+    const char *lbl_a = sel == ITEM_SAIR ? t->btn_sair : sel >= N ? t->btn_abrir : t->btn_jogar;
     x += texto_sombra(x, yb, 28, BRANCO, 255, "\xEE\x83\xA0");   // U+E0E0 botão A
-    x += texto_sombra(x + 4, yb, 22, BRANCO, 230, sel >= N ? t->btn_abrir : t->btn_jogar) + 44;
+    x += texto_sombra(x + 4, yb, 22, BRANCO, 230, lbl_a) + 44;
     x += texto_sombra(x, yb, 28, BRANCO, 255, "\xEE\x83\xAF");   // U+E0EF botão +
     texto_sombra(x + 4, yb, 22, BRANCO, 230, t->btn_sair);
 
@@ -1020,6 +1377,10 @@ int main(int argc, char **argv) {
     opcoes_ler();
     atualizar_jogos();
     int sel = ler_ultimo(), lancar = 0, tela_op = 0, sel_op = 0;
+    int tela_trp = 0, trp_jogo = 0, trp_filtro = 0, trp_ocultos = 0, trp_sel = 0, trp_scroll = 0;
+    int trp_hold = 0, trp_hold_dir = 0;
+    TrophySet trp_set;
+    memset(&trp_set, 0, sizeof trp_set);
 #ifdef ENABLE_UPDATER
     int tela_upd = 0;
 #endif
@@ -1028,6 +1389,53 @@ int main(int argc, char **argv) {
     while (appletMainLoop()) {
         padUpdate(&pad);
         u64 k = padGetButtonsDown(&pad);
+        u64 h = padGetButtons(&pad);
+        if (tela_trp) {
+            int vis[TRP_MAX_TROPHIES];
+            int nvis = trp_set.loaded ? filtrar_trofeus(&trp_set, trp_filtro, vis) : 0;
+            if (k & (HidNpadButton_B | HidNpadButton_Plus)) {
+                trp_free(&trp_set);
+                tela_trp = 0;
+                msg = msg_inicial();
+                px = framebufferBegin(&fb, &pitch); pitch /= 4;
+                desenhar(sel, msg, tick++);
+                framebufferEnd(&fb);
+                continue;
+            }
+            {
+                int mudou_jogo = 0;
+                if (k & (HidNpadButton_L | HidNpadButton_AnyLeft)) { trp_jogo = (trp_jogo + N - 1) % N; mudou_jogo = 1; }
+                if (k & (HidNpadButton_R | HidNpadButton_AnyRight)) { trp_jogo = (trp_jogo + 1) % N; mudou_jogo = 1; }
+                if (mudou_jogo) {
+                    trp_load(&trp_set, dir, jogos[trp_jogo].trp_comm, l_val[idioma_atual() + 1]);
+                    trp_sel = trp_scroll = 0;
+                    nvis = trp_set.loaded ? filtrar_trofeus(&trp_set, trp_filtro, vis) : 0;
+                }
+                if (k & HidNpadButton_X) {
+                    trp_filtro = (trp_filtro + 1) % 3;
+                    trp_sel = trp_scroll = 0;
+                    nvis = trp_set.loaded ? filtrar_trofeus(&trp_set, trp_filtro, vis) : 0;
+                }
+                if (k & HidNpadButton_Y) trp_ocultos = !trp_ocultos;
+                int dir_v = (h & HidNpadButton_AnyUp) ? -1 : (h & HidNpadButton_AnyDown) ? 1 : 0;
+                if (dir_v != trp_hold_dir) { trp_hold_dir = dir_v; trp_hold = 0; }
+                if (nvis > 0) {
+                    if (dir_v && (trp_hold == 0 || (trp_hold >= 18 && trp_hold % 4 == 0)))
+                        trp_sel = (trp_sel + dir_v + nvis) % nvis;
+                    if (dir_v) trp_hold++;
+                    if (k & HidNpadButton_ZL) { trp_sel -= 6; if (trp_sel < 0) trp_sel = 0; }
+                    if (k & HidNpadButton_ZR) { trp_sel += 6; if (trp_sel >= nvis) trp_sel = nvis - 1; }
+                    if (trp_sel < trp_scroll) trp_scroll = trp_sel;
+                    if (trp_sel >= trp_scroll + 6) trp_scroll = trp_sel - 5;
+                    if (trp_scroll > nvis - 6) trp_scroll = nvis > 6 ? nvis - 6 : 0;
+                    if (trp_scroll < 0) trp_scroll = 0;
+                }
+            }
+            px = framebufferBegin(&fb, &pitch); pitch /= 4;
+            desenhar_trofeus(&trp_set, trp_jogo, trp_filtro, trp_ocultos, trp_sel, trp_scroll, tick++);
+            framebufferEnd(&fb);
+            continue;
+        }
 #ifdef ENABLE_UPDATER
         if (tela_upd) {
             UpdStatus st;
@@ -1094,14 +1502,23 @@ int main(int argc, char **argv) {
         if (k & HidNpadButton_Plus) break;
         if (k & HidNpadButton_AnyUp) sel = (sel + NMENU - 1) % NMENU;
         if (k & HidNpadButton_AnyDown) sel = (sel + 1) % NMENU;
-        if ((k & HidNpadButton_A) && sel == N) { tela_op = 1; msg = MSG_NONE; }
+        if ((k & HidNpadButton_A) && sel == ITEM_TROFEUS) {
+            tela_trp = 1;
+            trp_jogo = ler_ultimo();
+            trp_filtro = 0;
+            trp_sel = trp_scroll = 0;
+            trp_hold = trp_hold_dir = 0;
+            trp_load(&trp_set, dir, jogos[trp_jogo].trp_comm, l_val[idioma_atual() + 1]);
+            msg = MSG_NONE;
+        } else if ((k & HidNpadButton_A) && sel == ITEM_OPCOES) { tela_op = 1; msg = MSG_NONE; }
 #ifdef ENABLE_UPDATER
-        else if ((k & HidNpadButton_A) && sel == N + 1) {
+        else if ((k & HidNpadButton_A) && sel == ITEM_UPD) {
             tela_upd = 1;
             msg = MSG_NONE;
             upd_start_check(VERSAO);
         }
 #endif
+        else if ((k & HidNpadButton_A) && sel == ITEM_SAIR) break;
         else if (k & HidNpadButton_A) {
             char p[FS_MAX_PATH]; caminho(p, sizeof p, sel);
             jogo_ok[sel] = existe(p);
@@ -1120,6 +1537,7 @@ int main(int argc, char **argv) {
         if (lancar) break;
     }
 
+    trp_free(&trp_set);
 #ifdef ENABLE_UPDATER
     upd_shutdown();
 #endif

@@ -5,7 +5,11 @@
 1. Abra o Homebrew Menu **segurando R ao abrir um jogo** (title takeover). Pelo Álbum (modo applet) a memória não é
    suficiente.
 2. Abra **God of War Collection** (`gow-nx.nro`).
-3. Escolha o jogo, **Opções** ou **Buscar atualizações** com **Cima/Baixo** e aperte **A**. O **+** sai.
+3. Escolha o jogo, **Troféus**, **Opções** ou **Buscar atualizações** com **Cima/Baixo** e aperte **A**. O **+** sai.
+
+Em **Troféus**, o launcher lê o `TROPHY.TRP` do seu jogo (`game/PCSA00126/sce_sys/trophy/`) e o progresso gravado pelo
+runtime em `data/trophy/<NPWR>/unlocked.txt`, mostrando ícones, porcentagem, filtros (**X**), troféus ocultos (**Y**)
+e troca entre *God of War* e *God of War II* (**L/R**).
 
 Em **Opções** você configura o idioma (detecção automática do idioma do Switch ou seleção manual entre inglês, espanhol,
 português brasileiro, francês, italiano e alemão) e as opções gráficas compartilhadas entre os dois jogos (resolução

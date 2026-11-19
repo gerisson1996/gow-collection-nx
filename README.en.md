@@ -42,7 +42,7 @@ runtime** (as patches), the **launcher** and the build scripts.
 | | |
 |---|---|
 | 🎮 **Native** | Game code recompiled to ARM64, no CPU emulation |
-| ⚔️ **Two games, one launcher** | `gow-nx.nro` opens a multilingual menu (Switch language auto-detection) with cover art, music and options |
+| ⚔️ **Two games, one launcher** | `gow-nx.nro` opens a multilingual menu (Switch language auto-detection) with cover art, music, trophy viewer, options and updater |
 | ⚡ **30 FPS at stock clocks** | Heavy *God of War II* scenes hold 30 FPS with the CPU at 1020 MHz, no overclock |
 | 🖥️ **Vulkan (NVK)** | GXM translated to Vulkan, with command recording on a dedicated thread |
 | 🧵 **Per-core threads** | Game logic, rendering, Vulkan recording and audio pinned to the Switch's 3 cores |

@@ -42,7 +42,7 @@ runtime do vitaRT** (em forma de patches), o **launcher** e os scripts de compil
 | | |
 |---|---|
 | 🎮 **Nativo** | Código do jogo recompilado para ARM64, sem emulação de CPU |
-| ⚔️ **Dois jogos, um launcher** | `gow-nx.nro` abre um menu multilíngue (detecção automática do idioma do Switch) com capa, música e opções |
+| ⚔️ **Dois jogos, um launcher** | `gow-nx.nro` abre um menu multilíngue (detecção automática do idioma do Switch) com capa, música, troféus, opções e atualizador |
 | ⚡ **30 FPS no relógio padrão** | Cenas pesadas de *God of War II* estáveis a 30 FPS com a CPU em 1020 MHz, sem overclock |
 | 🖥️ **Vulkan (NVK)** | GXM traduzido para Vulkan, com os comandos gravados numa thread dedicada |
 | 🧵 **Threads por núcleo** | Lógica, renderização, gravação Vulkan e áudio fixados nos 3 núcleos do Switch |

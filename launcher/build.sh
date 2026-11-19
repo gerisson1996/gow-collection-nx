@@ -13,7 +13,7 @@ mkdir -p "$O" "$ROOT/launcher/romfs"
 ARCH=(-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE)
 CFLAGS=("${ARCH[@]}" -O2 -Wall -Wno-format-truncation -D__SWITCH__ "-DVERSAO=\"$VERSION\"" "-DUPDATE_REPO=\"$UPDATE_REPO\"" "-I$DKP/libnx/include" "-I$PL/include" "-I$PL/include/freetype2")
 
-OBJS=("$O/main.o")
+OBJS=("$O/main.o" "$O/trophies.o")
 CURL_LIBS=()
 if [ -f "$PL/lib/libcurl.a" ]; then
     CFLAGS+=(-DENABLE_UPDATER)
@@ -36,6 +36,7 @@ else
     echo "aviso: switch-curl não encontrado em $PL; compilando sem o atualizador"
 fi
 
+"$B/aarch64-none-elf-gcc" "${CFLAGS[@]}" -c "$ROOT/launcher/trophies.c" -o "$O/trophies.o"
 "$B/aarch64-none-elf-gcc" "${CFLAGS[@]}" -c "$ROOT/launcher/main.c" -o "$O/main.o"
 "$B/aarch64-none-elf-gcc" -specs="$DKP/libnx/switch.specs" "${ARCH[@]}" -o "$O/gow-nx.elf" "${OBJS[@]}" -L"$PL/lib" -L"$DKP/libnx/lib" \
     "${CURL_LIBS[@]}" -lfreetype -lharfbuzz -lfreetype -lbz2 -lpng16 -lz -lmpg123 -lnx -lm
