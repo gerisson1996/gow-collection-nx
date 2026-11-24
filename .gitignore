@@ -17,12 +17,9 @@ work.bin
 *.pak
 *.psarc
 
-# arte/música do usuário (gerados por tools/make_launcher_assets.ps1)
+# arte/música do usuário (opcionais, carregados automaticamente de game/PCSA00126/ se não estiverem aqui)
 launcher/romfs/*
 !launcher/romfs/README.md
-# capa e música padrão do launcher: versionadas para o CI (GitHub Actions) embuti-las no gow-nx.nro
-!launcher/romfs/bg.bgra
-!launcher/romfs/music.mp3
 res/
 
 # backups locais

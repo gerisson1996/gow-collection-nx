@@ -22,8 +22,11 @@ Também dá para abrir `gow1.nro` ou `gow2.nro` direto pelo Homebrew Menu; nesse
 | **−** | Atualizador |
 | **+** | Sair |
 
-O launcher lembra o último jogo escolhido (`launcher.cfg`, na mesma pasta), mostra a bateria, toca a música e exibe as
-capas. Sem `bg.bgra`/`music.mp3` no romfs nem na pasta do launcher no SD, ele abre com fundo preto e sem música.
+O launcher lembra o último jogo escolhido (`launcher.cfg`, na mesma pasta), mostra a bateria, verifica se os arquivos
+em `game/PCSA00126/exec/` estão presentes e carrega automaticamente o fundo (`sce_sys/pic0.png`), as capas dos cards
+(`System.psarc` / `TROPHY.TRP`) e a música tema (`tit1e1_2.at9` de `gow1_psp2_SCEA.psarc`) da sua cópia em
+`game/PCSA00126/`. Para personalizar, basta colocar `bg.png`/`bg.bgra`, `music.mp3`/`music.wav` ou
+`data/launcher/capa_gow1.*`/`capa_gow2.*` na pasta do launcher no cartão SD.
 
 ### Presets rápidos (L / R)
 
@@ -81,7 +84,8 @@ delas à mão, o launcher mostra **Personalizado**.
 | Barras de vida dos inimigos | `enemy_health_bars=` | `0` / `1` |
 | QTE automático | `auto_qte=` | `0` / `1` |
 | Vida / Magia / Fúria infinitas | `cheat_infinite_health=`, `cheat_infinite_magic=`, `cheat_infinite_rage=` | `0` / `1` |
-| Idioma / Language | `language=` | `pt` (português BR), `en` (inglês) |
+| Idioma / Language | `launcher_language=`, `language=` | `auto` (idioma do Switch + `data/traducoes/*/records.tsv`), `pt`, `en`, `es` ou pastas extras `[SD]` |
+| Música do launcher | `launcher_music=` | `0` / `1` |
 
 ### Troféus (X)
 
@@ -156,11 +160,11 @@ no launcher.
 | **Gráficos** | Preset rápido, resolução (portátil e TV), upscaler, nitidez, anti-aliasing, anisotrópico, brilho, saturação, vibrância, debanding, geração de quadros, fluxo da geração |
 | **Mods** | Texturas HD, barras de vida dos inimigos, QTE automático |
 | **Cheats** | Vida, magia e fúria infinitas |
-| **Sistema** | Idioma, taxa de quadros, VSync, contador de FPS, diagnóstico da GPU (grava os tempos por passada no log), restaurar padrões, fechar menu, **sair do jogo** |
+| **Sistema** | Idioma (PT-BR, EN, ES), taxa de quadros, VSync, contador de FPS, diagnóstico da GPU (grava os tempos por passada no log), restaurar padrões, fechar menu, **voltar ao launcher**, **sair do jogo** |
 
-**Sair do jogo** pede confirmação (**A** sai, **B** cancela) e fecha do jeito certo, voltando ao Homebrew Menu. O que
-não foi salvo no próprio jogo se perde. Prefira essa opção ao HOME → fechar, que não dá tempo ao port de encerrar as
-threads.
+**Voltar ao launcher** e **Sair do jogo** pedem confirmação (**A** confirma, **B** cancela) e encerram do jeito certo
+(voltando direto ao `gow-nx.nro` via `envSetNextLoad` ou ao Homebrew Menu). O que não foi salvo no próprio jogo se
+perde. Prefira essas opções ao HOME → fechar, que não dá tempo ao port de encerrar as threads.
 
 O que for mudado no mod menu é gravado em `data/vitart_options.ini` e vale também da próxima vez.
 

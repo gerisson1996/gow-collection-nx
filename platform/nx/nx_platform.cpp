@@ -4,6 +4,7 @@
 
 #include <switch.h>
 #include <pthread.h>
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <atomic>
@@ -224,6 +225,22 @@ const char *game_name() { return GOW_GAME; }
 
 void request_exit() { g_exit = true; }
 bool exit_requested() { return g_exit; }
+
+bool can_return_to_launcher() {
+    if (!envHasNextLoad()) return false;
+    struct stat st;
+    const std::string p = g_root + "/gow-nx.nro";
+    return stat(p.c_str(), &st) == 0;
+}
+
+void request_return_to_launcher() {
+    if (can_return_to_launcher()) {
+        const std::string p = g_root + "/gow-nx.nro";
+        const std::string args = "\"" + p + "\"";
+        envSetNextLoad(p.c_str(), args.c_str());
+    }
+    g_exit = true;
+}
 
 // std::exit com o jogo, o som, o vídeo e a gravação Vulkan ainda rodando destruía objetos estáticos e o Vulkan
 // por baixo dessas threads: o fechamento pelo HOME travava ou dava erro. Aqui só os arquivos são gravados

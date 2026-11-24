@@ -1,10 +1,10 @@
 // Launcher do gow-nx ("God of War Collection"): dois cards com a capa de cada jogo, painel com save/troféus/extras,
 // perfil rápido (presets com L/R) e a tela de opções com tudo do menu R + Plus, em abas. Encadeia o NRO escolhido
 // (mesma pasta) via hbloader (envSetNextLoad).
-//   romfs:/bg.bgra    arte de fundo 1280x720, BGRA 8 bits (gerada de res/launcher_bg.jpg)
-//   romfs:/music.mp3  música de fundo (decodificada com libmpg123)
-//   <pasta>/data/launcher/capa_gow1.(webp|png|jpg), capa_gow2.*  capas dos cards (do usuário, ficam fora do NRO)
+//   Fundo, capas dos cards e música são carregados automaticamente de game/PCSA00126/ (ou overrides no SD).
+//   <pasta>/data/launcher/capa_gow1.(webp|png|jpg), capa_gow2.*  capas personalizadas dos cards (opcional)
 #include <switch.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,13 +14,14 @@
 #include <sys/stat.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
-#include <mpg123.h>
 #include <webp/decode.h>
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #define STBI_ONLY_JPEG
 #include "stb_image.h"
+#include "game_assets.h"
 #include "trophies.h"
+#include "i18n.h"
 #ifdef ENABLE_UPDATER
 #include "updater.h"
 #endif
@@ -37,25 +38,85 @@ static const u32 OURO = RGB(229, 193, 88), OURO_ESC = RGB(150, 112, 44), OURO_ME
 #define VERSAO "dev"
 #endif
 
-typedef struct { const char *titulo, *sub, *arquivo, *capitulo, *id, *save, *npwr; u32 tinta, claro; const char *sub_en, *capitulo_en; } Jogo;
+typedef struct {
+    const char *titulo, *sub, *arquivo, *capitulo, *id, *save, *npwr;  // sub e capitulo são chaves de tr()
+    u32 tinta, claro;
+} Jogo;
 static const Jogo jogos[] = {
-    { "God of War", "A jornada de Kratos contra Ares", "gow1.nro", "CAPÍTULO I", "gow1", "GOW1", "NPWR05244_00",
-      RGB(40, 9, 6), RGB(150, 40, 24), "Kratos' quest against Ares", "CHAPTER I" },
-    { "God of War II", "A vingança contra Zeus", "gow2.nro", "CAPÍTULO II", "gow2", "GOW2", "NPWR05283_00",
-      RGB(10, 14, 30), RGB(40, 70, 130), "Revenge against Zeus", "CHAPTER II" },
+    { "God of War", "game.gow1.subtitle", "gow1.nro", "game.gow1.chapter", "gow1", "GOW1", "NPWR05244_00",
+      RGB(40, 9, 6), RGB(150, 40, 24) },
+    { "God of War II", "game.gow2.subtitle", "gow2.nro", "game.gow2.chapter", "gow2", "GOW2", "NPWR05283_00",
+      RGB(10, 14, 30), RGB(40, 70, 130) },
 };
 #define N (int)(sizeof jogos / sizeof jogos[0])
 
-// Idioma do launcher e do mod menu (language= no vitart_options.ini, opção O_LANG): 0 português (Brasil), 1 inglês
-static int idioma = 0;
-#define T(pt, en) (idioma ? (en) : (pt))
+// Idioma da interface: 0 português (BR), 1 inglês, 2 espanhol
+enum { UI_PT = 0, UI_EN = 1, UI_ES = 2, NUI_LANG = 3 };
+static int idioma = UI_PT;
+static int idioma_sistema = UI_EN;
+static char tag_sistema[16] = "en";
+// Códigos dos idiomas embutidos (lang/<código>.ini), na ordem de UI_PT/UI_EN/UI_ES.
+static const char *const ui_codigo[NUI_LANG] = { "pt", "en", "es" };
+static void aplicar_idioma(int ui) { idioma = ui; i18n_set(ui_codigo[ui]); }
 
 static char dir[FS_MAX_PATH] = "sdmc:/switch/gow-nx/";
 static char self_nro[FS_MAX_PATH] = "sdmc:/switch/gow-nx/gow-nx.nro";
+static int romfs_ativo = 0;
+#ifdef ENABLE_UPDATER
 static char upd_tag[64];   // versão nova achada na checagem automática ("" = nenhuma)
+#endif
 
 static int existe(const char *p) { struct stat st; return stat(p, &st) == 0; }
 static void caminho(char *out, size_t n, int i) { snprintf(out, n, "%.700s%s", dir, jogos[i].arquivo); }
+
+static int ui_lang_por_prefixo(const char *s) {
+    if (!s || !s[0] || !s[1]) return -1;
+    char a = (char)tolower((unsigned char)s[0]);
+    char b = (char)tolower((unsigned char)s[1]);
+    char c = s[2];
+    if (c != 0 && c != '-' && c != '_') return -1;
+    if (a == 'p' && b == 't') return UI_PT;
+    if (a == 'e' && b == 'n') return UI_EN;
+    if (a == 'e' && b == 's') return UI_ES;
+    return -1;
+}
+
+static int codigo_eq_ci(const char *a, const char *b) {
+    if (!a || !b) return 0;
+    while (*a && *b) {
+        char ca = (char)tolower((unsigned char)*a);
+        char cb = (char)tolower((unsigned char)*b);
+        if (ca == '_') ca = '-';
+        if (cb == '_') cb = '-';
+        if (ca != cb) return 0;
+        a++; b++;
+    }
+    return *a == 0 && *b == 0;
+}
+
+static int prefixo_base_eq_ci(const char *a, const char *b) {
+    if (!a || !b || !a[0] || !b[0]) return 0;
+    while (*a && *a != '-' && *a != '_' && *b && *b != '-' && *b != '_') {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) return 0;
+        a++; b++;
+    }
+    return (*a == 0 || *a == '-' || *a == '_') && (*b == 0 || *b == '-' || *b == '_');
+}
+
+static int detectar_idioma_switch(void) {
+    u64 code = 0;
+    if (R_SUCCEEDED(setInitialize())) {
+        if (R_FAILED(setGetSystemLanguage(&code))) code = 0;
+        setExit();
+    }
+    char tag[9];
+    memcpy(tag, &code, 8);
+    tag[8] = 0;
+    if (tag[0]) snprintf(tag_sistema, sizeof tag_sistema, "%s", tag);
+    else snprintf(tag_sistema, sizeof tag_sistema, "en");
+    int l = ui_lang_por_prefixo(tag_sistema);
+    return l >= 0 ? l : UI_EN;
+}
 
 static int ler_ultimo(void) {
     char p[FS_MAX_PATH]; snprintf(p, sizeof p, "%.700slauncher.cfg", dir);
@@ -68,13 +129,65 @@ static void gravar_ultimo(int i) {
     FILE *f = fopen(p, "w"); if (f) { fprintf(f, "%d\n", i); fclose(f); }
 }
 
+// ---------------------------------------------------------------- traduções no SD (data/traducoes/*/)
+#define MAX_SD_TRADS 24
+typedef struct {
+    char codigo[64];
+    char nome[64];
+    int  ui_lang;   // UI_PT / UI_EN / UI_ES ou -1 se idioma externo (fr, de, ru...)
+} TradSD;
+static TradSD trad_sd[MAX_SD_TRADS];
+static int n_trad_sd = 0;
+
+static void apara(char *s) { size_t n = strlen(s); while (n && (unsigned char)s[n - 1] <= 32) s[--n] = 0; }
+
+static void ler_nome_trad_ini(const char *ini_path, char *out, size_t out_sz) {
+    FILE *f = fopen(ini_path, "r");
+    if (!f) return;
+    char l[256];
+    while (fgets(l, sizeof l, f)) {
+        apara(l);
+        const char *v = NULL;
+        if (!strncmp(l, "nome=", 5)) v = l + 5;
+        else if (!strncmp(l, "name=", 5)) v = l + 5;
+        if (v && v[0]) {
+            while (*v == ' ' || *v == '\t') v++;
+            if (v[0]) { snprintf(out, out_sz, "%s", v); break; }
+        }
+    }
+    fclose(f);
+}
+
+static int cmp_trad_sd(const void *a, const void *b) {
+    return strcmp(((const TradSD *)a)->codigo, ((const TradSD *)b)->codigo);
+}
+
+static int buscar_trad_sd_por_tag(const char *tag) {
+    if (!tag || !tag[0]) return -1;
+    for (int i = 0; i < n_trad_sd; i++)
+        if (codigo_eq_ci(trad_sd[i].codigo, tag)) return i;
+    for (int i = 0; i < n_trad_sd; i++)
+        if (prefixo_base_eq_ci(trad_sd[i].codigo, tag)) return i;
+    return -1;
+}
+
+static int buscar_trad_sd_por_ui(int ui) {
+    int best = -1;
+    for (int i = 0; i < n_trad_sd; i++) {
+        if (trad_sd[i].ui_lang != ui) continue;
+        if (codigo_eq_ci(trad_sd[i].codigo, tag_sistema)) return i;
+        if (best < 0) best = i;
+    }
+    return best;
+}
+
 // ---------------------------------------------------------------- opções (as mesmas do menu R + Plus)
 // Gravadas em <pasta>/data/vitart_options.ini, que os dois jogos leem ao abrir. Linhas que o launcher não conhece
-// (mods, ISO, idioma...) ficam como estão.
+// (mods, ISO...) ficam como estão.
 enum { ABA_IMAGEM, ABA_COR, ABA_DESEMPENHO, ABA_JOGO, NABAS };
-static const char *const abas_pt[NABAS] = { "Imagem", "Cor", "Desempenho", "Jogo" };
-static const char *const abas_en[NABAS] = { "Image", "Color", "Performance", "Game" };
-#define abas (idioma ? abas_en : abas_pt)
+static const char *const abas_chave[NABAS] = { "options.tab.image", "options.tab.color", "options.tab.performance",
+                                              "options.tab.game" };
+#define ABA(i) tr(abas_chave[i])
 
 typedef struct {
     int aba; const char *nome, *chave, *desc;
@@ -82,124 +195,207 @@ typedef struct {
     int padrao, atual, barra;
 } Opcao;
 
-static const char *const b_rot[] = { "Desligado", "Ligado" }, *const b_val[] = { "0", "1" };
-static const char *const bf_rot[] = { "Desligada", "Ligada" };
-static const char *const rd_rot[] = { "Automático", "deko3d", "Vulkan" }, *const rd_val[] = { "auto", "deko3d", "vulkan" };
-static const char *const r_rot[] = { "Automática", "1x (720x408)", "Vita (960x544)", "720p (1270x720)", "2x (1440x816)",
-                                     "3x (2160x1224)", "4x (2880x1632)" };
-static const char *const rt_rot[] = { "Igual ao portátil", "1x (720x408)", "Vita (960x544)", "720p (1270x720)",
-                                      "2x (1440x816)", "3x (2160x1224)", "4x (2880x1632)" };
+static const char *const b_rot[] = { "val.off", "val.on" }, *const b_val[] = { "0", "1" };
+static const char *const bf_rot[] = { "val.off_f", "val.on_f" };
+static const char *const rd_rot[] = { "val.automatic", "deko3d", "Vulkan" }, *const rd_val[] = { "auto", "deko3d", "vulkan" };
+static const char *const r_rot[] = { "val.automatic_f", "1x (720x408)", "Vita (960x544)", "720p (1270x720)", "2x (1440x816)", "3x (2160x1224)", "4x (2880x1632)" };
+static const char *const rt_rot[] = { "val.same_as_handheld", "1x (720x408)", "Vita (960x544)", "720p (1270x720)", "2x (1440x816)", "3x (2160x1224)", "4x (2880x1632)" };
 static const char *const r_val[] = { "0", "1", "6", "5", "2", "3", "4" };
-static const char *const as_rot[] = { "Automática", "16:9", "16:10", "21:9", "32:9", "4:3" };
+static const char *const as_rot[] = { "val.automatic_f", "16:9", "16:10", "21:9", "32:9", "4:3" };
 static const char *const as_val[] = { "auto", "16:9", "16:10", "21:9", "32:9", "4:3" };
 static const char *const up_rot[] = { "Bilinear", "FSR 1.0" }, *const up_val[] = { "bilinear", "fsr1" };
-static const char *const n10_rot[] = { "Desligada", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" };
+static const char *const n10_rot[] = { "val.off_f", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" };
 static const char *const n10_val[] = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" };
-static const char *const aa_rot[] = { "Desligado", "FXAA" }, *const aa_val[] = { "off", "fxaa" };
-static const char *const an_rot[] = { "1x (desligado)", "2x", "4x", "8x", "16x" }, *const an_val[] = { "1", "2", "4", "8", "16" };
-static const char *const g9_rot[] = { "-4", "-3", "-2", "-1", "Padrão", "+1", "+2", "+3", "+4" };
-static const char *const v5_rot[] = { "Desligada", "1", "2", "3", "4" };
-static const char *const f_rot[] = { "30", "60", "Máximo" }, *const f_val[] = { "30", "60", "max" };
-static const char *const fg_rot[] = { "Desligada", "Desempenho", "Qualidade" }, *const fg_val[] = { "off", "performance", "quality" };
-static const char *const fl_rot[] = { "Completo", "1/2", "1/3", "1/4 (leve)" }, *const fl_val[] = { "1", "2", "3", "4" };
-static const char *const lg_rot[] = { "Português (BR)", "English" }, *const lg_val[] = { "pt", "en" };
-// rótulos em inglês (mesma ordem); os que são só números/nomes técnicos não precisam
-static const char *const b_en[] = { "Off", "On" }, *const rd_en[] = { "Automatic", "deko3d", "Vulkan" };
-static const char *const r_en[] = { "Automatic", "1x (720x408)", "Vita (960x544)", "720p (1270x720)", "2x (1440x816)",
-                                    "3x (2160x1224)", "4x (2880x1632)" };
-static const char *const rt_en[] = { "Same as handheld", "1x (720x408)", "Vita (960x544)", "720p (1270x720)",
-                                     "2x (1440x816)", "3x (2160x1224)", "4x (2880x1632)" };
-static const char *const as_en[] = { "Automatic", "16:9", "16:10", "21:9", "32:9", "4:3" };
-static const char *const n10_en[] = { "Off", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" };
-static const char *const aa_en[] = { "Off", "FXAA" }, *const an_en[] = { "1x (off)", "2x", "4x", "8x", "16x" };
-static const char *const g9_en[] = { "-4", "-3", "-2", "-1", "Default", "+1", "+2", "+3", "+4" };
-static const char *const v5_en[] = { "Off", "1", "2", "3", "4" }, *const f_en[] = { "30", "60", "Max" };
-static const char *const fg_en[] = { "Off", "Performance", "Quality" }, *const fl_en[] = { "Full", "1/2", "1/3", "1/4 (light)" };
-static const char *const *rot_en(const char *const *r) {
-    static const char *const *const par[][2] = { { b_rot, b_en }, { bf_rot, b_en }, { rd_rot, rd_en }, { r_rot, r_en },
-        { rt_rot, rt_en }, { as_rot, as_en }, { n10_rot, n10_en }, { aa_rot, aa_en }, { an_rot, an_en }, { g9_rot, g9_en },
-        { v5_rot, v5_en }, { f_rot, f_en }, { fg_rot, fg_en }, { fl_rot, fl_en } };
-    for (unsigned i = 0; i < sizeof par / sizeof par[0]; i++) if (par[i][0] == r) return par[i][1];
-    return r;
-}
+static const char *const aa_rot[] = { "val.off", "FXAA" }, *const aa_val[] = { "off", "fxaa" };
+static const char *const an_rot[] = { "val.aniso_off", "2x", "4x", "8x", "16x" }, *const an_val[] = { "1", "2", "4", "8", "16" };
+static const char *const g9_rot[] = { "-4", "-3", "-2", "-1", "val.default", "+1", "+2", "+3", "+4" };
+static const char *const v5_rot[] = { "val.off_f", "1", "2", "3", "4" };
+static const char *const f_rot[] = { "30", "60", "val.max" }, *const f_val[] = { "30", "60", "max" };
+static const char *const fg_rot[] = { "val.off_f", "val.performance", "val.quality" }, *const fg_val[] = { "off", "performance", "quality" };
+static const char *const fl_rot[] = { "val.flow_full", "1/2", "1/3", "val.flow_quarter" }, *const fl_val[] = { "1", "2", "3", "4" };
+static const char *const ui_nomes[NUI_LANG] = { "Português (BR)", "English", "Español" };
+static const char *const lg_val_base[] = { "auto", "pt", "en", "es" };
+static const char *lg_val[1 + NUI_LANG + MAX_SD_TRADS] = { "auto", "pt", "en", "es" };
+static char lg_rot_buf[1 + NUI_LANG + MAX_SD_TRADS][96];
+static const char *lg_rot[1 + NUI_LANG + MAX_SD_TRADS] = { "Auto", "Português (BR)", "English", "Español" };
+static int lg_sd_idx[1 + NUI_LANG + MAX_SD_TRADS];
 
 enum { O_REND, O_RES, O_RESD, O_ASP, O_UPS, O_SHARP, O_AA, O_ANISO, O_GAMMA, O_SAT, O_VIB, O_DITHER,
-       O_FPS, O_FGEN, O_FLOW, O_VSYNC, O_COUNTER, O_TEX, O_HP, O_QTE, O_VIDA, O_MAGIA, O_FURIA, O_LANG, NOP };
+       O_FPS, O_FGEN, O_FLOW, O_VSYNC, O_COUNTER, O_TEX, O_HP, O_QTE, O_VIDA, O_MAGIA, O_FURIA, O_LANG, O_MUSICA, NOP };
 static Opcao opcoes[NOP] = {
-    [O_REND] = { ABA_IMAGEM, "Renderizador", "renderer=", "deko3d é o caminho nativo do Switch (vídeos HD e geração de quadros). Automático deixa o jogo escolher.", 3, rd_rot, rd_val, 0 },
-    [O_RES] = { ABA_IMAGEM, "Resolução (portátil)", "resolution_switch=", "Resolução interna do jogo. Mais alta deixa a imagem mais nítida e pesa mais na GPU.", 7, r_rot, r_val, 0 },
-    [O_RESD] = { ABA_IMAGEM, "Resolução (na TV)", "resolution_docked=", "Resolução usada com o console na base. \"Igual ao portátil\" usa a de cima.", 7, rt_rot, r_val, 0 },
-    [O_ASP] = { ABA_IMAGEM, "Proporção da tela", "aspect=", "Formato da imagem. Automática segue a tela do console ou da TV.", 6, as_rot, as_val, 0 },
-    [O_UPS] = { ABA_IMAGEM, "Upscaler", "upscaler=", "Como a imagem é ampliada até a tela. FSR 1.0 reconstrói bordas com mais nitidez.", 2, up_rot, up_val, 0 },
-    [O_SHARP] = { ABA_IMAGEM, "Nitidez (RCAS)", "sharpness=", "Realce de nitidez depois da ampliação. Valores altos podem criar contornos.", 11, n10_rot, n10_val, 0, 0, 1 },
-    [O_AA] = { ABA_IMAGEM, "Anti-aliasing", "anti_aliasing=", "FXAA suaviza os serrilhados das bordas com custo baixo.", 2, aa_rot, aa_val, 0 },
-    [O_ANISO] = { ABA_IMAGEM, "Filtro anisotrópico", "anisotropic=", "Deixa texturas de chão e paredes nítidas quando vistas de lado.", 5, an_rot, an_val, 0, 0, 1 },
-    [O_GAMMA] = { ABA_COR, "Brilho", "gamma=", "Ajuste de gama da imagem final.", 9, g9_rot, n10_val, 4, 4, 1 },
-    [O_SAT] = { ABA_COR, "Saturação", "saturation=", "Intensidade das cores.", 9, g9_rot, n10_val, 4, 4, 1 },
-    [O_VIB] = { ABA_COR, "Vibrância", "vibrance=", "Realça as cores mais apagadas sem estourar as já fortes.", 5, v5_rot, n10_val, 0, 0, 1 },
-    [O_DITHER] = { ABA_COR, "Debanding", "debanding=", "Disfarça faixas em degradês (céu, névoa, sombras).", 2, b_rot, b_val, 0 },
-    [O_FPS] = { ABA_DESEMPENHO, "Taxa de quadros", "fps=", "Limite de quadros por segundo. Máximo usa a taxa da tela sem acelerar o jogo.", 3, f_rot, f_val, 0 },
-    [O_FGEN] = { ABA_DESEMPENHO, "Geração de quadros", "frame_generation=", "Cria quadros intermediários (LSFG). Só no God of War I, com o renderizador deko3d.", 3, fg_rot, fg_val, 0 },
-    [O_FLOW] = { ABA_DESEMPENHO, "Fluxo da geração", "fg_flow=", "Resolução do fluxo óptico da geração de quadros. Menor é mais leve.", 4, fl_rot, fl_val, 1, 1 },
-    [O_VSYNC] = { ABA_DESEMPENHO, "VSync", "vsync=", "Sincroniza com a tela para evitar cortes na imagem.", 2, bf_rot, b_val, 1, 1 },
-    [O_COUNTER] = { ABA_DESEMPENHO, "Contador de FPS", "fps_counter=", "Mostra os quadros por segundo no canto da tela.", 2, b_rot, b_val, 0 },
-    [O_TEX] = { ABA_JOGO, "Texturas HD", "hd_textures=", "Usa o pacote de texturas em data/texpack quando existir.", 2, bf_rot, b_val, 1, 1 },
-    [O_HP] = { ABA_JOGO, "Barras de vida dos inimigos", "enemy_health_bars=", "Mostra a vida que resta em cada inimigo.", 2, bf_rot, b_val, 1, 1 },
-    [O_QTE] = { ABA_JOGO, "QTE automático", "auto_qte=", "Os comandos rápidos (botões na tela) são feitos sozinhos.", 2, b_rot, b_val, 0 },
-    [O_VIDA] = { ABA_JOGO, "Vida infinita", "cheat_infinite_health=", "Trapaça: a vida de Kratos não acaba.", 2, bf_rot, b_val, 0 },
-    [O_MAGIA] = { ABA_JOGO, "Magia infinita", "cheat_infinite_magic=", "Trapaça: a barra de magia não acaba.", 2, bf_rot, b_val, 0 },
-    [O_FURIA] = { ABA_JOGO, "Fúria infinita", "cheat_infinite_rage=", "Trapaça: a fúria (Rage of the Gods / Titans) não acaba.", 2, bf_rot, b_val, 0 },
-    [O_LANG] = { ABA_JOGO, "Idioma / Language", "language=", "Idioma do launcher e do mod menu (R + Plus).", 2, lg_rot, lg_val, 0 },
+    [O_REND] = { ABA_IMAGEM, "opt.renderer.name", "renderer=", "opt.renderer.desc", 3, rd_rot, rd_val, 0 },
+    [O_RES] = { ABA_IMAGEM, "opt.resolution_switch.name", "resolution_switch=", "opt.resolution_switch.desc", 7, r_rot, r_val, 0 },
+    [O_RESD] = { ABA_IMAGEM, "opt.resolution_docked.name", "resolution_docked=", "opt.resolution_docked.desc", 7, rt_rot, r_val, 0 },
+    [O_ASP] = { ABA_IMAGEM, "opt.aspect.name", "aspect=", "opt.aspect.desc", 6, as_rot, as_val, 0 },
+    [O_UPS] = { ABA_IMAGEM, "opt.upscaler.name", "upscaler=", "opt.upscaler.desc", 2, up_rot, up_val, 0 },
+    [O_SHARP] = { ABA_IMAGEM, "opt.sharpness.name", "sharpness=", "opt.sharpness.desc", 11, n10_rot, n10_val, 0, 0, 1 },
+    [O_AA] = { ABA_IMAGEM, "opt.anti_aliasing.name", "anti_aliasing=", "opt.anti_aliasing.desc", 2, aa_rot, aa_val, 0 },
+    [O_ANISO] = { ABA_IMAGEM, "opt.anisotropic.name", "anisotropic=", "opt.anisotropic.desc", 5, an_rot, an_val, 0, 0, 1 },
+    [O_GAMMA] = { ABA_COR, "opt.gamma.name", "gamma=", "opt.gamma.desc", 9, g9_rot, n10_val, 4, 4, 1 },
+    [O_SAT] = { ABA_COR, "opt.saturation.name", "saturation=", "opt.saturation.desc", 9, g9_rot, n10_val, 4, 4, 1 },
+    [O_VIB] = { ABA_COR, "opt.vibrance.name", "vibrance=", "opt.vibrance.desc", 5, v5_rot, n10_val, 0, 0, 1 },
+    [O_DITHER] = { ABA_COR, "opt.debanding.name", "debanding=", "opt.debanding.desc", 2, b_rot, b_val, 0 },
+    [O_FPS] = { ABA_DESEMPENHO, "opt.fps.name", "fps=", "opt.fps.desc", 3, f_rot, f_val, 0 },
+    [O_FGEN] = { ABA_DESEMPENHO, "opt.frame_generation.name", "frame_generation=", "opt.frame_generation.desc", 3, fg_rot, fg_val, 0 },
+    [O_FLOW] = { ABA_DESEMPENHO, "opt.fg_flow.name", "fg_flow=", "opt.fg_flow.desc", 4, fl_rot, fl_val, 1, 1 },
+    [O_VSYNC] = { ABA_DESEMPENHO, "opt.vsync.name", "vsync=", "opt.vsync.desc", 2, bf_rot, b_val, 1, 1 },
+    [O_COUNTER] = { ABA_DESEMPENHO, "opt.fps_counter.name", "fps_counter=", "opt.fps_counter.desc", 2, b_rot, b_val, 0 },
+    [O_TEX] = { ABA_JOGO, "opt.hd_textures.name", "hd_textures=", "opt.hd_textures.desc", 2, bf_rot, b_val, 1, 1 },
+    [O_HP] = { ABA_JOGO, "opt.enemy_health_bars.name", "enemy_health_bars=", "opt.enemy_health_bars.desc", 2, bf_rot, b_val, 1, 1 },
+    [O_QTE] = { ABA_JOGO, "opt.auto_qte.name", "auto_qte=", "opt.auto_qte.desc", 2, b_rot, b_val, 0 },
+    [O_VIDA] = { ABA_JOGO, "opt.cheat_infinite_health.name", "cheat_infinite_health=", "opt.cheat_infinite_health.desc", 2, bf_rot, b_val, 0 },
+    [O_MAGIA] = { ABA_JOGO, "opt.cheat_infinite_magic.name", "cheat_infinite_magic=", "opt.cheat_infinite_magic.desc", 2, bf_rot, b_val, 0 },
+    [O_FURIA] = { ABA_JOGO, "opt.cheat_infinite_rage.name", "cheat_infinite_rage=", "opt.cheat_infinite_rage.desc", 2, bf_rot, b_val, 0 },
+    [O_LANG] = { ABA_JOGO, "opt.language.name", "language=", "opt.language.desc", 4, lg_rot, lg_val, 0 },
+    [O_MUSICA] = { ABA_JOGO, "opt.launcher_music.name", "launcher_music=", "opt.launcher_music.desc", 2, bf_rot, b_val, 1, 1 },
 };
-// nome e descrição em inglês de cada opção
-static const char *const op_en[NOP][2] = {
-    [O_REND] = { "Renderer", "deko3d is the Switch's native path (HD videos and frame generation). Automatic lets the game choose." },
-    [O_RES] = { "Resolution (handheld)", "Internal game resolution. Higher is sharper and heavier on the GPU." },
-    [O_RESD] = { "Resolution (TV)", "Resolution used while docked. \"Same as handheld\" uses the one above." },
-    [O_ASP] = { "Aspect ratio", "Image shape. Automatic follows the console or TV screen." },
-    [O_UPS] = { "Upscaler", "How the image is scaled to the screen. FSR 1.0 rebuilds edges more sharply." },
-    [O_SHARP] = { "Sharpness (RCAS)", "Sharpening after upscaling. High values can add halos." },
-    [O_AA] = { "Anti-aliasing", "FXAA smooths jagged edges at a low cost." },
-    [O_ANISO] = { "Anisotropic filtering", "Keeps floor and wall textures sharp at steep angles." },
-    [O_GAMMA] = { "Brightness", "Gamma of the final image." },
-    [O_SAT] = { "Saturation", "Color intensity." },
-    [O_VIB] = { "Vibrance", "Boosts dull colors without blowing out strong ones." },
-    [O_DITHER] = { "Debanding", "Hides banding in gradients (sky, fog, shadows)." },
-    [O_FPS] = { "Frame rate", "Frames per second cap. Max uses the screen rate without speeding up the game." },
-    [O_FGEN] = { "Frame generation", "Creates in-between frames (LSFG). God of War I only, with the deko3d renderer." },
-    [O_FLOW] = { "Generation flow", "Optical flow resolution for frame generation. Lower is lighter." },
-    [O_VSYNC] = { "VSync", "Syncs with the screen to avoid tearing." },
-    [O_COUNTER] = { "FPS counter", "Shows frames per second in the corner of the screen." },
-    [O_TEX] = { "HD textures", "Uses the texture pack in data/texpack when present." },
-    [O_HP] = { "Enemy health bars", "Shows the health left on each enemy." },
-    [O_QTE] = { "Auto QTE", "Quick-time events (on-screen buttons) are done for you." },
-    [O_VIDA] = { "Infinite health", "Cheat: Kratos' health never runs out." },
-    [O_MAGIA] = { "Infinite magic", "Cheat: the magic bar never runs out." },
-    [O_FURIA] = { "Infinite rage", "Cheat: rage (Rage of the Gods / Titans) never runs out." },
-    [O_LANG] = { "Idioma / Language", "Language of the launcher and the mod menu (R + Plus)." },
-};
-static const char *op_nome(const Opcao *o) { return idioma ? op_en[o - opcoes][0] : o->nome; }
-static const char *op_desc(const Opcao *o) { return idioma ? op_en[o - opcoes][1] : o->desc; }
-static const char *op_rot(const Opcao *o, int j) { return (idioma ? rot_en(o->rot) : o->rot)[j]; }
+static const char *op_nome(const Opcao *o) { return tr(o->nome); }
+static const char *op_desc(const Opcao *o) { return tr(o->desc); }
+static const char *op_rot(const Opcao *o, int j) { return tr(o->rot[j]); }  // números e nomes técnicos não têm chave
+
+static void escanear_traducoes(void) {
+    n_trad_sd = 0;
+    for (int i = 0; i <= NUI_LANG; i++) { lg_val[i] = lg_val_base[i]; lg_sd_idx[i] = -1; }
+    opcoes[O_LANG].n = 1 + NUI_LANG;
+
+    char base[FS_MAX_PATH];
+    snprintf(base, sizeof base, "%.700sdata/traducoes", dir);
+    DIR *dp = opendir(base);
+    if (dp) {
+        struct dirent *de;
+        while ((de = readdir(dp)) != NULL && n_trad_sd < MAX_SD_TRADS) {
+            const char *name = de->d_name;
+            if (!name[0] || name[0] == '.') continue;
+            if (strlen(name) >= sizeof trad_sd[0].codigo) continue;
+            char rec[FS_MAX_PATH + 128];
+            snprintf(rec, sizeof rec, "%.700sdata/traducoes/%s/records.tsv", dir, name);
+            if (!existe(rec)) continue;
+
+            TradSD *t = &trad_sd[n_trad_sd];
+            snprintf(t->codigo, sizeof t->codigo, "%s", name);
+            snprintf(t->nome, sizeof t->nome, "%s", name);
+            char ini[FS_MAX_PATH + 128];
+            snprintf(ini, sizeof ini, "%.700sdata/traducoes/%s/idioma.ini", dir, name);
+            ler_nome_trad_ini(ini, t->nome, sizeof t->nome);
+            t->ui_lang = ui_lang_por_prefixo(name);
+            n_trad_sd++;
+        }
+        closedir(dp);
+    }
+    if (n_trad_sd > 1) qsort(trad_sd, (size_t)n_trad_sd, sizeof trad_sd[0], cmp_trad_sd);
+
+    // Atualiza rótulos das opções de idioma (Auto + PT/EN/ES + pastas extras do SD)
+    int si_auto = buscar_trad_sd_por_tag(tag_sistema);
+    if (si_auto >= 0) {
+        const char *lbl = (trad_sd[si_auto].ui_lang == idioma_sistema) ? ui_nomes[idioma_sistema] : trad_sd[si_auto].nome;
+        snprintf(lg_rot_buf[0], sizeof lg_rot_buf[0], "Auto (%s) [SD]", lbl);
+    } else {
+        snprintf(lg_rot_buf[0], sizeof lg_rot_buf[0], "Auto (%s)", ui_nomes[idioma_sistema]);
+    }
+    lg_rot[0] = lg_rot_buf[0];
+
+    for (int u = 0; u < NUI_LANG; u++) {
+        int si = buscar_trad_sd_por_ui(u);
+        if (si >= 0) snprintf(lg_rot_buf[1 + u], sizeof lg_rot_buf[1 + u], "%s [SD]", ui_nomes[u]);
+        else snprintf(lg_rot_buf[1 + u], sizeof lg_rot_buf[1 + u], "%s", ui_nomes[u]);
+        lg_rot[1 + u] = lg_rot_buf[1 + u];
+    }
+
+    int claimed[NUI_LANG] = { 0 };
+    for (int i = 0; i < n_trad_sd; i++) {
+        int ul = trad_sd[i].ui_lang;
+        if (ul >= 0 && ul < NUI_LANG && !claimed[ul] && buscar_trad_sd_por_ui(ul) == i) {
+            claimed[ul] = 1;
+            continue;
+        }
+        int slot = opcoes[O_LANG].n;
+        lg_val[slot] = trad_sd[i].codigo;
+        lg_sd_idx[slot] = i;
+        snprintf(lg_rot_buf[slot], sizeof lg_rot_buf[slot], "%s [SD]", trad_sd[i].nome);
+        lg_rot[slot] = lg_rot_buf[slot];
+        opcoes[O_LANG].n = slot + 1;
+    }
+}
+
+static int resolver_ui_idioma(void) {
+    int a = opcoes[O_LANG].atual;
+    if (a >= 1 && a <= NUI_LANG) return a - 1;
+    if (a > NUI_LANG && a < opcoes[O_LANG].n) {
+        int si = lg_sd_idx[a];
+        if (si >= 0 && si < n_trad_sd && trad_sd[si].ui_lang >= 0) return trad_sd[si].ui_lang;
+    }
+    return idioma_sistema;
+}
+
+static const char *idioma_codigo_vitart_atual(void) {
+    int a = opcoes[O_LANG].atual;
+    if (a == 0) {
+        int si = buscar_trad_sd_por_tag(tag_sistema);
+        if (si >= 0) return trad_sd[si].codigo;
+        return lg_val_base[1 + idioma_sistema];
+    }
+    if (a >= 1 && a <= NUI_LANG) {
+        int si = buscar_trad_sd_por_ui(a - 1);
+        if (si >= 0) return trad_sd[si].codigo;
+        return lg_val_base[a];
+    }
+    if (a > NUI_LANG && a < opcoes[O_LANG].n) return opcoes[O_LANG].val[a];
+    return lg_val_base[1 + idioma_sistema];
+}
+
+static int parse_idioma_opt(const char *v) {
+    if (!v || !v[0]) return -1;
+    for (int j = 0; j < opcoes[O_LANG].n; j++)
+        if (codigo_eq_ci(v, opcoes[O_LANG].val[j])) return j;
+    for (int i = 0; i < n_trad_sd; i++) {
+        if (!codigo_eq_ci(v, trad_sd[i].codigo)) continue;
+        for (int j = 1 + NUI_LANG; j < opcoes[O_LANG].n; j++)
+            if (lg_sd_idx[j] == i) return j;
+        if (trad_sd[i].ui_lang >= 0) return trad_sd[i].ui_lang + 1;
+    }
+    int ul = ui_lang_por_prefixo(v);
+    if (ul >= 0) return ul + 1;
+    return -1;
+}
 
 static void ini_caminho(char *p, size_t n) { snprintf(p, n, "%.700sdata/vitart_options.ini", dir); }
-static void apara(char *s) { size_t n = strlen(s); while (n && (unsigned char)s[n - 1] <= 32) s[--n] = 0; }
+
+static int ini_tem_arquivo = 0;
+static char ini_language_lido[64] = "";
 
 static void opcoes_ler(void) {
+    ini_tem_arquivo = 0;
+    ini_language_lido[0] = 0;
     char p[FS_MAX_PATH], l[1024]; ini_caminho(p, sizeof p);
-    FILE *f = fopen(p, "r"); if (!f) return;
+    FILE *f = fopen(p, "r");
+    if (!f) { aplicar_idioma(resolver_ui_idioma()); return; }
+    ini_tem_arquivo = 1;
+    int lang_cfg = -1, lang_ini = -1;
     while (fgets(l, sizeof l, f)) {
         apara(l);
+        if (!strncmp(l, "launcher_language=", 18)) {
+            int idx = parse_idioma_opt(l + 18);
+            if (idx >= 0) lang_cfg = idx;
+            continue;
+        }
         for (int i = 0; i < NOP; i++) {
             size_t k = strlen(opcoes[i].chave);
             if (strncmp(l, opcoes[i].chave, k)) continue;
             const char *v = l + k;
             if (i == O_FPS) { opcoes[i].atual = !strcmp(v, "max") ? 2 : atoi(v) == 60 ? 1 : atoi(v) > 60 ? 2 : 0; continue; }
+            if (i == O_LANG) {
+                snprintf(ini_language_lido, sizeof ini_language_lido, "%s", v);
+                int idx = parse_idioma_opt(v);
+                if (idx >= 0) lang_ini = idx;
+                continue;
+            }
             for (int j = 0; j < opcoes[i].n; j++) if (!strcmp(v, opcoes[i].val[j])) opcoes[i].atual = j;
         }
     }
     fclose(f);
-    idioma = opcoes[O_LANG].atual;
+    if (lang_cfg >= 0) opcoes[O_LANG].atual = lang_cfg;
+    else if (lang_ini >= 0) opcoes[O_LANG].atual = lang_ini;
+    aplicar_idioma(resolver_ui_idioma());
 }
 
 static int opcoes_gravar(void) {
@@ -211,24 +407,45 @@ static int opcoes_gravar(void) {
     if (f) {
         while (fgets(l, sizeof l, f)) {
             apara(l);
-            int nossa = 0;
+            int nossa = !strncmp(l, "launcher_language=", 18);
             for (int i = 0; i < NOP; i++) nossa |= !strncmp(l, opcoes[i].chave, strlen(opcoes[i].chave));
             if (!nossa) fprintf(o, "%s\n", l);
         }
         fclose(f);
     }
-    for (int i = 0; i < NOP; i++) fprintf(o, "%s%s\n", opcoes[i].chave, opcoes[i].val[opcoes[i].atual]);
-    fclose(o);
+    fprintf(o, "launcher_language=%s\n", opcoes[O_LANG].val[opcoes[O_LANG].atual]);
+    const char *vc = idioma_codigo_vitart_atual();
+    for (int i = 0; i < NOP; i++) {
+        if (i == O_LANG) {
+            if (vc[0]) fprintf(o, "language=%s\n", vc);
+        } else {
+            fprintf(o, "%s%s\n", opcoes[i].chave, opcoes[i].val[opcoes[i].atual]);
+        }
+    }
+    int ok = !ferror(o);
+    if (fclose(o) != 0) ok = 0;
+    if (!ok) { remove(np); return 0; }
     remove(p);
-    return rename(np, p) == 0;
+    if (rename(np, p) != 0) return 0;
+    ini_tem_arquivo = 1;
+    snprintf(ini_language_lido, sizeof ini_language_lido, "%s", vc);
+    return 1;
+}
+
+static void sincronizar_idioma_auto(void) {
+    if (opcoes[O_LANG].atual != 0) return;
+    int si = buscar_trad_sd_por_tag(tag_sistema);
+    if (si < 0) return;
+    if (!ini_tem_arquivo || strcmp(ini_language_lido, trad_sd[si].codigo) != 0)
+        opcoes_gravar();
 }
 
 // Perfil rápido (L/R na tela principal): mexe só na resolução do portátil e na taxa de quadros.
-typedef struct { const char *nome, *desc, *nome_en; int res, fps; } Preset;
+typedef struct { const char *nome; int res, fps; } Preset;  // nome é chave de tr()
 static const Preset presets[] = {
-    { "Desempenho", "Vita · 60 quadros", "Performance", 2, 1 },
-    { "Equilibrado", "720p · 60 quadros", "Balanced", 3, 1 },
-    { "Qualidade", "2x · 30 quadros estáveis", "Quality", 4, 0 },
+    { "launcher.preset.performance", 2, 1 },
+    { "launcher.preset.balanced", 3, 1 },
+    { "launcher.preset.quality", 4, 0 },
 };
 #define NPRE (int)(sizeof presets / sizeof presets[0])
 static int preset_atual(void) {
@@ -239,7 +456,7 @@ static int preset_atual(void) {
 static void preset_aplicar(int i) { opcoes[O_RES].atual = presets[i].res; opcoes[O_FPS].atual = presets[i].fps; }
 
 // ---------------------------------------------------------------- informações de cada jogo (save, troféus, extras)
-typedef struct { time_t save; int tem_save, trof_total, trof_ok, videos, texpack, nro; } Info;
+typedef struct { time_t save; int tem_save, trof_total, trof_ok, videos, texpack, nro, dump; } Info;
 static Info info[N];
 
 static u32 be32(const u8 *p) { return (u32)p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3]; }
@@ -307,6 +524,7 @@ static void info_ler(void) {
         o->texpack = conta_arquivos(p, NULL) > 0;
         caminho(p, sizeof p, i);
         o->nro = existe(p);
+        o->dump = ga_game_dump_ok(dir, i);
     }
 }
 
@@ -318,17 +536,13 @@ static Thread a_thr;
 static volatile int a_parar = 0, a_ok = 0;
 static void *a_mem[NBUF];
 static AudioOutBuffer a_buf[NBUF];
+static GaAudio *a_stream = NULL;
 
 static void musica(void *arg) {
     (void)arg;
-    mpg123_handle *mh = mpg123_new(NULL, NULL);
-    if (!mh) return;
-    mpg123_param(mh, MPG123_FLAGS, MPG123_FORCE_STEREO | MPG123_QUIET, 0);
-    if (mpg123_open(mh, "romfs:/music.mp3") != MPG123_OK) { mpg123_delete(mh); return; }
-    long rate = 44100; int ch, enc;
-    mpg123_getformat(mh, &rate, &ch, &enc);
-    mpg123_format_none(mh);
-    mpg123_format(mh, rate, MPG123_STEREO, MPG123_ENC_SIGNED_16);
+    GaAudio *st = a_stream;
+    if (!st) return;
+    long rate = ga_audio_rate(st);
 
     // Reamostragem linear rate -> 48000 (o audout só toca a 48 kHz). in[0] guarda a última amostra do bloco anterior.
     const double passo = (double)rate / 48000.0;
@@ -346,12 +560,10 @@ static void musica(void *arg) {
         for (int f = 0; f < AFRAMES; f++) {
             while (!mudo && pos + 1 >= (double)n_in) {
                 if (n_in) { prev[0] = in[(n_in - 1) * 2]; prev[1] = in[(n_in - 1) * 2 + 1]; pos -= n_in; }
-                size_t got = 0;
-                int r = mpg123_read(mh, in + 2, sizeof in - 4, &got);
+                size_t got_frames = ga_audio_read_stereo_s16(st, in + 2, 8191);
                 in[0] = prev[0]; in[1] = prev[1];
-                n_in = got / 4 + 1; pos += 1;
-                if (got) vazio = 0; else if (++vazio > 64) mudo = 1;
-                if (r == MPG123_DONE) mpg123_seek(mh, 0, SEEK_SET);
+                n_in = got_frames + 1; pos += 1;
+                if (got_frames) vazio = 0; else if (++vazio > 64) mudo = 1;
             }
             if (a_parar) ganho -= 1.f / (48000 * 0.35f); else if (ganho < 1.f) ganho += 1.f / (48000 * 1.5f);
             if (ganho < 0) ganho = 0;
@@ -368,21 +580,32 @@ static void musica(void *arg) {
         if (a_parar && ganho <= 0) break;
     }
     for (int k = 0; k < NBUF; k++) { AudioOutBuffer *r = NULL; u32 c = 0; audoutWaitPlayFinish(&r, &c, 200000000ULL); }
-    mpg123_close(mh); mpg123_delete(mh);
 }
 
 static void musica_iniciar(void) {
+    if (a_ok || !opcoes[O_MUSICA].atual) return;
+    a_stream = ga_audio_open(dir, romfs_ativo);
+    if (!a_stream) return;
+    if (R_FAILED(audoutInitialize())) { ga_audio_close(a_stream); a_stream = NULL; return; }
+    if (R_FAILED(audoutStartAudioOut())) { audoutExit(); ga_audio_close(a_stream); a_stream = NULL; return; }
     a_parar = 0;
-    if (!existe("romfs:/music.mp3")) return;
-    if (R_FAILED(audoutInitialize())) return;
-    if (R_FAILED(audoutStartAudioOut())) { audoutExit(); return; }
-    mpg123_init();
+    for (int i = 0; i < NBUF; i++) a_mem[i] = NULL;
     for (int i = 0; i < NBUF; i++) {
-        a_mem[i] = aligned_alloc(0x1000, ABYTES); memset(a_mem[i], 0, ABYTES);
+        a_mem[i] = aligned_alloc(0x1000, ABYTES);
+        if (!a_mem[i]) {
+            audoutStopAudioOut(); audoutExit(); ga_audio_close(a_stream); a_stream = NULL;
+            for (int j = 0; j < i; j++) { free(a_mem[j]); a_mem[j] = NULL; }
+            return;
+        }
+        memset(a_mem[i], 0, ABYTES);
         a_buf[i].next = NULL; a_buf[i].buffer = a_mem[i]; a_buf[i].buffer_size = ABYTES;
         a_buf[i].data_size = AFRAMES * 4; a_buf[i].data_offset = 0;
     }
-    if (R_FAILED(threadCreate(&a_thr, musica, NULL, NULL, 0x40000, 0x2C, -2))) { audoutStopAudioOut(); audoutExit(); return; }
+    if (R_FAILED(threadCreate(&a_thr, musica, NULL, NULL, 0x40000, 0x2C, -2))) {
+        audoutStopAudioOut(); audoutExit(); ga_audio_close(a_stream); a_stream = NULL;
+        for (int i = 0; i < NBUF; i++) { free(a_mem[i]); a_mem[i] = NULL; }
+        return;
+    }
     threadStart(&a_thr); a_ok = 1;
 }
 
@@ -390,8 +613,9 @@ static void musica_parar(void) {                 // fade-out curto e libera o á
     if (!a_ok) return;
     a_parar = 1;
     threadWaitForExit(&a_thr); threadClose(&a_thr);
-    audoutStopAudioOut(); audoutExit(); mpg123_exit();
-    for (int i = 0; i < NBUF; i++) free(a_mem[i]);
+    audoutStopAudioOut(); audoutExit();
+    ga_audio_close(a_stream); a_stream = NULL;
+    for (int i = 0; i < NBUF; i++) { free(a_mem[i]); a_mem[i] = NULL; }
     a_ok = 0;
 }
 
@@ -582,12 +806,37 @@ static int img_ler(const char *base, Img *o) {
     return 0;
 }
 
-// Reduz `s` para w x h cobrindo a área (corta o excesso no centro), com média de caixa.
+// Reduz/amplia `s` para w x h cobrindo a área (corta o excesso no centro).
 static int img_cobrir(const Img *s, int w, int h, Img *o) {
     o->p = malloc((size_t)w * h * 4); if (!o->p) return 0;
     o->w = w, o->h = h;
     float esc = fmaxf((float)w / s->w, (float)h / s->h);
     float sw = w / esc, sh = h / esc, x0 = (s->w - sw) * .5f, y0 = (s->h - sh) * .5f, passo = 1 / esc;
+    if (passo < 1.f) {
+        for (int j = 0; j < h; j++) {
+            float fy = y0 + (j + .5f) * passo - .5f;
+            if (fy < 0.f) fy = 0.f;
+            int y1 = (int)fy, y2 = y1 + 1;
+            float wy = fy - y1;
+            if (y1 >= s->h - 1) { y1 = y2 = s->h - 1; wy = 0.f; }
+            for (int i = 0; i < w; i++) {
+                float fx = x0 + (i + .5f) * passo - .5f;
+                if (fx < 0.f) fx = 0.f;
+                int x1 = (int)fx, x2 = x1 + 1;
+                float wx = fx - x1;
+                if (x1 >= s->w - 1) { x1 = x2 = s->w - 1; wx = 0.f; }
+                u32 p00 = s->p[y1 * s->w + x1], p10 = s->p[y1 * s->w + x2];
+                u32 p01 = s->p[y2 * s->w + x1], p11 = s->p[y2 * s->w + x2];
+                float w00 = (1.f - wx) * (1.f - wy), w10 = wx * (1.f - wy);
+                float w01 = (1.f - wx) * wy,         w11 = wx * wy;
+                u32 r = (u32)((p00 & 0xff) * w00 + (p10 & 0xff) * w10 + (p01 & 0xff) * w01 + (p11 & 0xff) * w11 + .5f);
+                u32 g = (u32)(((p00 >> 8) & 0xff) * w00 + ((p10 >> 8) & 0xff) * w10 + ((p01 >> 8) & 0xff) * w01 + ((p11 >> 8) & 0xff) * w11 + .5f);
+                u32 b = (u32)(((p00 >> 16) & 0xff) * w00 + ((p10 >> 16) & 0xff) * w10 + ((p01 >> 16) & 0xff) * w01 + ((p11 >> 16) & 0xff) * w11 + .5f);
+                o->p[j * w + i] = RGB(r > 255 ? 255 : r, g > 255 ? 255 : g, b > 255 ? 255 : b);
+            }
+        }
+        return 1;
+    }
     for (int j = 0; j < h; j++) {
         int ya = (int)(y0 + j * passo), yb = (int)(y0 + (j + 1) * passo);
         if (yb <= ya) yb = ya + 1;
@@ -617,9 +866,12 @@ static void capas_carregar(void) {
     for (int i = 0; i < N; i++) {
         char base[FS_MAX_PATH]; snprintf(base, sizeof base, "%.700sdata/launcher/capa_%s", dir, jogos[i].id);
         Img o = { 0 };
-        if (!img_ler(base, &o)) {               // sem capa própria no SD: usa a que vem dentro do NRO
+        if (!img_ler(base, &o)) {               // sem capa própria no SD: tenta romfs:/ ou game/PCSA00126/
             snprintf(base, sizeof base, "romfs:/capa_%s", jogos[i].id);
-            if (!img_ler(base, &o)) continue;
+            if (!romfs_ativo || !img_ler(base, &o)) {
+                if (!ga_load_game_card_rgba(dir, i, jogos[i].tinta, &o.p, &o.w, &o.h))
+                    continue;
+            }
         }
         tem_capa[i] = img_cobrir(&o, CW1, CH1, &capa_g[i]) && img_cobrir(&o, CW0, CH0, &capa_p[i]);
         free(o.p);
@@ -710,17 +962,21 @@ static void card(int i, int x, int y, int w, int h, float s, int ultimo) {
     // título no pé do card
     int a = (int)(255 * (1 - dim));
     int tt = s > .5f ? 26 : 22;
-    texto_e(x + 18, y + h - 52 - (tt - 22), 13, OURO, a, T(jogos[i].capitulo, jogos[i].capitulo_en), 3);
+    texto_e(x + 18, y + h - 52 - (tt - 22), 13, OURO, a, tr(jogos[i].capitulo), 3);
     negrito(x + 18, y + h - 22, tt, BRANCO, a, jogos[i].titulo, 1);
     if (s <= .02f) rborda(x, y, w, h, (int)r, 1, OURO_ESC, 160);
     if (ultimo) {
-        const char *u = T("ÚLTIMO JOGADO", "LAST PLAYED");
+        const char *u = tr("launcher.card.last_played");
         int wu = largura(12, u, 2);
         rrect(x + 14, y + 14, wu + 20, 24, 12, OURO, (int)(235 * (1 - dim)));
         texto_e(x + 24, y + 31, 12, ESCURO, a, u, 2);
     }
     if (!info[i].nro) {
-        const char *m = T("NRO não encontrado", "NRO not found");
+        const char *m = tr("launcher.card.nro_missing");
+        rrect(x + 14, y + 46, largura(13, m, 0) + 20, 24, 12, VERMELHO, 220);
+        texto(x + 24, y + 63, 13, BRANCO, 255, m);
+    } else if (!info[i].dump) {
+        const char *m = tr("launcher.card.game_missing");
         rrect(x + 14, y + 46, largura(13, m, 0) + 20, 24, 12, VERMELHO, 220);
         texto(x + 24, y + 63, 13, BRANCO, 255, m);
     }
@@ -770,17 +1026,17 @@ static void desenhar(int sel, float cs[N], int ultimo, const char *msg, float fa
     const Jogo *j = &jogos[sel]; const Info *in = &info[sel];
     const int X = 640, PW = W - 56 - X, a = (int)(255 * fade);
     const int dx = (int)((1 - fade) * 24);
-    texto_e(X + dx, 150, 15, OURO, a, T(j->capitulo, j->capitulo_en), 4);
+    texto_e(X + dx, 150, 15, OURO, a, tr(j->capitulo), 4);
     negrito(X + dx, 206, 50, BRANCO, a, j->titulo, 1);
-    texto_sombra(X + dx, 240, 21, CINZA, a, T(j->sub, j->sub_en));
+    texto_sombra(X + dx, 240, 21, CINZA, a, tr(j->sub));
 
     char meta[160], dt[48] = "";
     if (in->tem_save && in->save > 0) {
         struct tm *tm = localtime(&in->save);
-        if (tm) snprintf(dt, sizeof dt, T("Save de %02d/%02d/%04d", "Save from %02d/%02d/%04d"), tm->tm_mday, tm->tm_mon + 1, tm->tm_year + 1900);
+        if (tm) snprintf(dt, sizeof dt, tr("launcher.panel.save_date"), tm->tm_mday, tm->tm_mon + 1, tm->tm_year + 1900);
     }
-    if (!*dt) snprintf(dt, sizeof dt, "%s", in->tem_save ? T("Save encontrado", "Save found") : T("Nenhum save ainda", "No save yet"));
-    if (in->trof_total) snprintf(meta, sizeof meta, T("%s  ·  %d de %d troféus", "%s  ·  %d of %d trophies"), dt, in->trof_ok, in->trof_total);
+    if (!*dt) snprintf(dt, sizeof dt, "%s", in->tem_save ? tr("launcher.panel.save_found") : tr("launcher.panel.no_save"));
+    if (in->trof_total) snprintf(meta, sizeof meta, tr("launcher.panel.save_trophies"), dt, in->trof_ok, in->trof_total);
     else snprintf(meta, sizeof meta, "%s", dt);
     texto_sombra(X + dx, 278, 18, BRANCO, a * 200 / 255, meta);
     if (in->trof_total) {   // barrinha dos troféus
@@ -789,20 +1045,21 @@ static void desenhar(int sel, float cs[N], int ultimo, const char *msg, float fa
     }
 
     int bx = X + dx, by = 308;
-    if (in->texpack) bx += pill(bx, by, opcoes[O_TEX].atual ? "Texturas HD" : T("Texturas HD desligadas", "HD textures off"), opcoes[O_TEX].atual, a) + 10;
-    if (in->videos) { char v[32]; snprintf(v, sizeof v, T("%d vídeos HD", "%d HD videos"), in->videos); bx += pill(bx, by, v, 1, a) + 10; }
-    if (opcoes[O_FGEN].atual && sel == 0) bx += pill(bx, by, "Geração de quadros", 1, a) + 10;
-    if (opcoes[O_VIDA].atual || opcoes[O_MAGIA].atual || opcoes[O_FURIA].atual) bx += pill(bx, by, T("Trapaças ligadas", "Cheats on"), 0, a) + 10;
+    if (in->texpack) bx += pill(bx, by, opcoes[O_TEX].atual ? tr("launcher.panel.hd_textures") : tr("launcher.panel.hd_textures_off"), opcoes[O_TEX].atual, a) + 10;
+    if (in->videos) { char v[32]; snprintf(v, sizeof v, tr("launcher.panel.hd_videos"), in->videos); bx += pill(bx, by, v, 1, a) + 10; }
+    if (opcoes[O_FGEN].atual && sel == 0) bx += pill(bx, by, tr("launcher.panel.frame_generation"), 1, a) + 10;
+    if (opcoes[O_VIDA].atual || opcoes[O_MAGIA].atual || opcoes[O_FURIA].atual) bx += pill(bx, by, tr("launcher.panel.cheats_on"), 0, a) + 10;
 
     // perfil rápido
-    texto_e(X, 380, 14, CINZA, 235, T("PERFIL RÁPIDO", "QUICK PROFILE"), 3);
-    int wl = largura(14, T("PERFIL RÁPIDO", "QUICK PROFILE"), 3);
+    const char *lbl_perf = tr("launcher.preset.title");
+    texto_e(X, 380, 14, CINZA, 235, lbl_perf, 3);
+    int wl = largura(14, lbl_perf, 3);
     linha_h(X + wl + 14, 375, PW - wl - 14, OURO_ESC, 160);
     const int py = 392, rh = 42;
     rrect(X, py, PW, rh * 4 + 8, 14, PAINEL, 215);
     rborda(X, py, PW, rh * 4 + 8, 14, 1, RGB(70, 56, 40), 255);
     int pre = preset_atual();
-    char pv[64]; snprintf(pv, sizeof pv, "‹  %s  ›", pre >= 0 ? T(presets[pre].nome, presets[pre].nome_en) : T("Personalizado", "Custom"));
+    char pv[64]; snprintf(pv, sizeof pv, "‹  %s  ›", pre >= 0 ? tr(presets[pre].nome) : tr("launcher.preset.custom"));
     {   // linha do preset: rótulo + L/R
         int y = py + 4;
         retangulo(X + 1, y, PW - 2, rh, OURO, 18);
@@ -817,43 +1074,45 @@ static void desenhar(int sel, float cs[N], int ultimo, const char *msg, float fa
     char rs[96];
     if (opcoes[O_RESD].atual) snprintf(rs, sizeof rs, "%s  ·  TV %s", res, op_rot(&opcoes[O_RESD], opcoes[O_RESD].atual));
     else snprintf(rs, sizeof rs, "%s", res);
-    linha_perfil(X, py + 4 + rh, PW, T("Resolução", "Resolution"), rs, BRANCO, 255);
+    linha_perfil(X, py + 4 + rh, PW, tr("launcher.preset.resolution"), rs, BRANCO, 255);
     char fq[64];
-    snprintf(fq, sizeof fq, "%s%s", opcoes[O_FPS].atual == 2 ? T("Máximo", "Max") : opcoes[O_FPS].atual ? T("60 quadros", "60 fps") : T("30 quadros", "30 fps"),
-             sel == 0 && opcoes[O_FGEN].atual ? T("  ·  com geração", "  ·  with generation") : "");
-    linha_perfil(X, py + 4 + rh * 2, PW, T("Quadros", "Frame rate"), fq, BRANCO, 255);
-    linha_perfil(X, py + 4 + rh * 3, PW, T("Renderizador", "Renderer"), op_rot(&opcoes[O_REND], opcoes[O_REND].atual), BRANCO, 255);
+    snprintf(fq, sizeof fq, "%s%s", opcoes[O_FPS].atual == 2 ? tr("launcher.preset.fps_max") : opcoes[O_FPS].atual ? tr("launcher.preset.fps_60") : tr("launcher.preset.fps_30"),
+             sel == 0 && opcoes[O_FGEN].atual ? tr("launcher.preset.with_generation") : "");
+    linha_perfil(X, py + 4 + rh * 2, PW, tr("launcher.preset.frame_rate"), fq, BRANCO, 255);
+    linha_perfil(X, py + 4 + rh * 3, PW, tr("launcher.preset.renderer"), op_rot(&opcoes[O_REND], opcoes[O_REND].atual), BRANCO, 255);
 
     // botões
     const int yb = 600;
-    int pode = in->nro;
+    int pode = in->nro && in->dump;
+    const char *lbl_jogar = tr("launcher.menu.play");
+    const char *lbl_opc = tr("launcher.menu.options");
     rrect(X, yb, 230, 54, 27, pode ? OURO : CINZA_ESC, 255);
-    int wj = largura(24, T("Jogar", "Play"), 0) + 34;
+    int wj = largura(24, lbl_jogar, 0) + 34;
     texto(X + (230 - wj) / 2, yb + 38, 28, ESCURO, 255, BT_A);
-    negrito(X + (230 - wj) / 2 + 34, yb + 36, 24, ESCURO, 255, T("Jogar", "Play"), 0);
+    negrito(X + (230 - wj) / 2 + 34, yb + 36, 24, ESCURO, 255, lbl_jogar, 0);
     rrect(X + 246, yb, 200, 54, 27, PAINEL, 200);
     rborda(X + 246, yb, 200, 54, 27, 1, OURO_ESC, 255);
-    int wo = largura(21, T("Opções", "Options"), 0) + 32;
+    int wo = largura(21, lbl_opc, 0) + 32;
     texto(X + 246 + (200 - wo) / 2, yb + 37, 26, BRANCO, 255, BT_Y);
-    texto(X + 246 + (200 - wo) / 2 + 32, yb + 35, 21, BRANCO, 245, T("Opções", "Options"));
+    texto(X + 246 + (200 - wo) / 2 + 32, yb + 35, 21, BRANCO, 245, lbl_opc);
     if (msg) texto_sombra(X, 584, 17, VERMELHO, 255, msg);
 
     // rodapé
     linha_h(48, 676, W - 96, OURO_ESC, 140);
     int x = 56, yr = 706;
-    x = dica(x, yr, BT_A, T("Jogar", "Play"));
-    x = dica(x, yr, BT_Y, T("Opções", "Options"));
-    x = dica(x, yr, "‹ ›", T("Jogo", "Game"));
+    x = dica(x, yr, BT_A, lbl_jogar);
+    x = dica(x, yr, BT_Y, lbl_opc);
+    x = dica(x, yr, "‹ ›", tr("launcher.menu.game"));
     x = dica(x, yr, BT_L BT_R, "Preset");
-    x = dica(x, yr, BT_X, T("Troféus", "Trophies"));
+    x = dica(x, yr, BT_X, tr("launcher.menu.trophies"));
 #ifdef ENABLE_UPDATER
     {
-        char u[80]; snprintf(u, sizeof u, upd_tag[0] ? T("Atualizar para %s", "Update to %s") : T("Atualizar", "Update"), upd_tag);
+        char u[80]; snprintf(u, sizeof u, upd_tag[0] ? tr("launcher.menu.update_to") : tr("launcher.menu.update"), upd_tag);
         if (upd_tag[0]) rrect(x - 10, yr - 26, largura(19, u, 0) + 60, 36, 18, OURO, 45);
         x = dica(x, yr, BT_MENOS, u);
     }
 #endif
-    dica(x, yr, BT_MAIS, T("Sair", "Exit"));
+    dica(x, yr, BT_MAIS, tr("launcher.menu.exit"));
     assinatura(yr);
 }
 
@@ -874,21 +1133,21 @@ static void desenhar_opcoes(int aba, int sel, const char *msg) {
     int x = X + 40;
     texto(X, 140, 26, CINZA, 230, BT_L);
     for (int a = 0; a < NABAS; a++) {
-        int w = largura(21, abas[a], 0);
+        int w = largura(21, ABA(a), 0);
         if (a == aba) {
             rrect(x - 18, 108, w + 36, 44, 22, OURO, 40);
             rborda(x - 18, 108, w + 36, 44, 22, 1, OURO_MED, 255);
-            negrito(x, 138, 21, OURO, 255, abas[a], 0);
-        } else texto(x, 138, 21, CINZA, 220, abas[a]);
+            negrito(x, 138, 21, OURO, 255, ABA(a), 0);
+        } else texto(x, 138, 21, CINZA, 220, ABA(a));
         x += w + 60;
     }
     texto(x - 14, 140, 26, CINZA, 230, BT_R);
-    const char *aviso = T("Valem para os dois jogos · também mudam no jogo com R + " BT_MAIS, "Apply to both games · also change in-game with R + " BT_MAIS);
+    const char *aviso = tr("options.note_both_games");
     texto_dir(W - X, 138, 16, CINZA_ESC, 255, aviso);
 
     // lista
     int lista[NOP], n = itens_da_aba(aba, lista);
-    const int y0 = 176, rh = 46;
+    const int y0 = 172, rh = 44;
     rrect(X, y0 - 6, PW, n * rh + 12, 16, PAINEL, 200);
     rborda(X, y0 - 6, PW, n * rh + 12, 16, 1, RGB(70, 56, 40), 255);
     for (int k = 0; k < n; k++) {
@@ -898,36 +1157,36 @@ static void desenhar_opcoes(int aba, int sel, const char *msg) {
             rrect(X + 8, y + 2, PW - 16, rh - 4, 12, OURO, 34);
             rrect(X + 8, y + 10, 4, rh - 20, 2, OURO, 255);
         } else if (k) retangulo(X + 24, y, PW - 48, 1, RGB(56, 46, 36), 255);
-        texto(X + 30, y + 30, 20, s ? BRANCO : CINZA, 255, op_nome(o));
-        if (lista[k] == O_FGEN || lista[k] == O_FLOW) texto(X + 34 + largura(20, op_nome(o), 0), y + 29, 14, OURO_ESC, 255, T("  só GoW I", "  GoW I only"));
+        texto(X + 30, y + 29, 20, s ? BRANCO : CINZA, 255, op_nome(o));
+        if (lista[k] == O_FGEN || lista[k] == O_FLOW) texto(X + 34 + largura(20, op_nome(o), 0), y + 28, 14, OURO_ESC, 255, tr("options.gow1_only"));
         const char *v = op_rot(o, o->atual);
         int xd = X + PW - 30;
         if (s) {
             int wv = largura(20, v, 0);
-            texto(xd - 12, y + 30, 20, OURO, 255, "›");
-            texto(xd - 30 - wv, y + 30, 20, BRANCO, 255, v);
-            texto(xd - 52 - wv, y + 30, 20, OURO, 255, "‹");
+            texto(xd - 12, y + 29, 20, OURO, 255, "›");
+            texto(xd - 30 - wv, y + 29, 20, BRANCO, 255, v);
+            texto(xd - 52 - wv, y + 29, 20, OURO, 255, "‹");
             xd -= 66 + wv;
         } else {
             int wv = largura(20, v, 0);
-            texto(xd - wv, y + 30, 20, o->atual != o->padrao ? OURO_MED : CINZA, 235, v);
+            texto(xd - wv, y + 29, 20, o->atual != o->padrao ? OURO_MED : CINZA, 235, v);
             xd -= wv + 16;
         }
         if (o->barra) {     // barrinha de nível
             const int bw = 150, bx = xd - bw - 10;
-            retangulo(bx, y + 22, bw, 4, CINZA_ESC, 200);
-            retangulo(bx, y + 22, bw * o->atual / (o->n - 1), 4, s ? OURO : OURO_ESC, 255);
-            if (o->padrao && o->padrao < o->n - 1) retangulo(bx + bw * o->padrao / (o->n - 1), y + 18, 2, 12, CINZA, 200);
+            retangulo(bx, y + 21, bw, 4, CINZA_ESC, 200);
+            retangulo(bx, y + 21, bw * o->atual / (o->n - 1), 4, s ? OURO : OURO_ESC, 255);
+            if (o->padrao && o->padrao < o->n - 1) retangulo(bx + bw * o->padrao / (o->n - 1), y + 17, 2, 12, CINZA, 200);
         }
     }
 
     // descrição da opção escolhida
     if (n) {
         const Opcao *o = &opcoes[lista[sel]];
-        const int yd = y0 + n * rh + 24;
+        const int yd = y0 + n * rh + 22;
         texto(X + 6, yd + 18, 17, CINZA, 235, op_desc(o));
         if (o->atual != o->padrao) {
-            char p[96]; snprintf(p, sizeof p, T("Padrão: %s", "Default: %s"), op_rot(o, o->padrao));
+            char p[96]; snprintf(p, sizeof p, tr("options.default_value"), op_rot(o, o->padrao));
             texto(X + 6, yd + 44, 15, CINZA_ESC, 255, p);
         }
     }
@@ -935,19 +1194,24 @@ static void desenhar_opcoes(int aba, int sel, const char *msg) {
 
     linha_h(48, 676, W - 96, OURO_ESC, 140);
     x = 56; int yr = 706;
-    x = dica(x, yr, BT_A, T("Mudar", "Change"));
-    x = dica(x, yr, BT_L BT_R, T("Aba", "Tab"));
-    x = dica(x, yr, BT_X, T("Padrão", "Default"));
-    dica(x, yr, BT_B, T("Salvar e voltar", "Save and back"));
+    x = dica(x, yr, BT_A, tr("options.btn.change"));
+    x = dica(x, yr, BT_L BT_R, tr("options.btn.tab"));
+    x = dica(x, yr, BT_X, tr("options.btn.default"));
+    dica(x, yr, BT_B, tr("options.btn.save_back"));
     assinatura(yr);
 }
 
 // ---------------------------------------------------------------- troféus (visualizador do PR #13: trophies.c)
-// Lê o TROPHY.TRP do jogo (nomes, descrições e ícones em PT) e o data/trophy/<npwr>/unlocked.txt gravado pelo vitart.
+// Lê o TROPHY.TRP do jogo (nomes, descrições e ícones no idioma ativo) e o data/trophy/<npwr>/unlocked.txt gravado pelo vitart.
 static TrophySet trof[N];
-static int trof_tentou[N];
+static int trof_lang[N] = { -1, -1 };
 static const TrophySet *trof_do(int g) {
-    if (!trof_tentou[g]) { trof_tentou[g] = 1; trp_load(&trof[g], dir, jogos[g].npwr, "pt-BR"); }
+    if (trof_lang[g] != idioma) {
+        static const char *const kTrpLang[NUI_LANG] = { "pt-BR", "en", "es" };
+        trp_free(&trof[g]);
+        trof_lang[g] = idioma;
+        trp_load(&trof[g], dir, jogos[g].npwr, kTrpLang[idioma]);
+    }
     return &trof[g];
 }
 static const u32 COR_GRAU[4] = { RGB(150, 200, 235), RGB(229, 193, 88), RGB(196, 200, 208), RGB(196, 128, 72) };
@@ -1010,13 +1274,13 @@ static void desenhar_trofeus(int g, int sel, int topo, int filtro, int spoiler) 
         x += w + 60;
     }
     texto(x - 14, 140, 26, CINZA, 230, BT_R);
-    static const char *const filtros[] = { "Todos", "Conquistados", "Faltando" }, *const filtros_en[] = { "All", "Earned", "Missing" };
-    char ft[64]; snprintf(ft, sizeof ft, T("Mostrando: %s", "Showing: %s"), T(filtros, filtros_en)[filtro]);
+    static const char *const filtros[] = { "trophies.filter.all", "trophies.filter.earned", "trophies.filter.missing" };
+    char ft[64]; snprintf(ft, sizeof ft, tr("trophies.showing"), tr(filtros[filtro]));
     texto_dir(W - 96, 138, 16, CINZA, 235, ft);
 
     if (!ts->loaded) {
-        texto(96, 220, 22, BRANCO, 255, T("Lista de troféus não encontrada.", "Trophy list not found."));
-        texto(96, 252, 17, CINZA, 235, T("O launcher lê game/PCSA00126/sce_sys/trophy/<NPWR>/TROPHY.TRP da pasta do jogo.", "The launcher reads game/PCSA00126/sce_sys/trophy/<NPWR>/TROPHY.TRP from the game folder."));
+        texto(96, 220, 22, BRANCO, 255, tr("trophies.not_found"));
+        texto(96, 252, 17, CINZA, 235, tr("trophies.not_found_detail"));
     } else {
         // resumo à esquerda
         const int LX = 96, LW = 300, LY = 176;
@@ -1024,23 +1288,22 @@ static void desenhar_trofeus(int g, int sel, int topo, int filtro, int spoiler) 
         rborda(LX, LY, LW, 400, 16, 1, RGB(70, 56, 40), 255);
         char pc[16]; snprintf(pc, sizeof pc, "%d%%", trp_percent(ts));
         negrito(LX + 28, LY + 78, 56, OURO, 255, pc, 1);
-        char qt[48]; snprintf(qt, sizeof qt, T("%d de %d troféus", "%d of %d trophies"), ts->unlocked_count, ts->count);
+        char qt[48]; snprintf(qt, sizeof qt, tr("trophies.count"), ts->unlocked_count, ts->count);
         texto(LX + 28, LY + 112, 18, BRANCO, 235, qt);
         retangulo(LX + 28, LY + 128, LW - 56, 4, CINZA_ESC, 200);
         retangulo(LX + 28, LY + 128, (LW - 56) * trp_percent(ts) / 100, 4, OURO, 255);
-        static const char *const nomes_pt[4] = { "Platina", "Ouro", "Prata", "Bronze" };
-        static const char *const nomes_en[4] = { "Platinum", "Gold", "Silver", "Bronze" };
-        const char *const *nomes = T(nomes_pt, nomes_en);
+        static const char *const nomes[4] = { "trophies.grade.platinum", "trophies.grade.gold", "trophies.grade.silver",
+                                              "trophies.grade.bronze" };
         for (int k = 0; k < 4; k++) {
             int y = LY + 178 + k * 48;
             for (int j = -7; j <= 7; j++)
                 for (int i = -7; i <= 7; i++)
                     if (i * i + j * j <= 49) mistura(LX + 40 + i, y - 6 + j, COR_GRAU[k], 255);
-            texto(LX + 60, y, 19, BRANCO, 240, nomes[k]);
+            texto(LX + 60, y, 19, BRANCO, 240, tr(nomes[k]));
             char c[24]; snprintf(c, sizeof c, "%d / %d", ts->grade_have[k], ts->grade_total[k]);
             texto_dir(LX + LW - 28, y, 19, ts->grade_total[k] && ts->grade_have[k] == ts->grade_total[k] ? OURO : CINZA, 240, c);
         }
-        char pt[48]; snprintf(pt, sizeof pt, T("%d de %d pontos", "%d of %d points"), ts->pts_have, ts->pts_total);
+        char pt[48]; snprintf(pt, sizeof pt, tr("trophies.points"), ts->pts_have, ts->pts_total);
         texto(LX + 28, LY + 376, 15, CINZA_ESC, 255, pt);
 
         // lista à direita
@@ -1048,7 +1311,7 @@ static void desenhar_trofeus(int g, int sel, int topo, int filtro, int spoiler) 
         const int RX = LX + LW + 24, RW = W - 96 - RX, RY = 176, rh = 78, vis = 6;
         rrect(RX, RY, RW, vis * rh + 4, 16, PAINEL, 210);
         rborda(RX, RY, RW, vis * rh + 4, 16, 1, RGB(70, 56, 40), 255);
-        if (!n) texto(RX + 28, RY + 46, 19, CINZA, 235, filtro == 1 ? T("Nenhum troféu conquistado ainda.", "No trophies earned yet.") : T("Todos conquistados!", "All earned!"));
+        if (!n) texto(RX + 28, RY + 46, 19, CINZA, 235, filtro == 1 ? tr("trophies.none_earned") : tr("trophies.all_earned"));
         for (int k = topo; k < n && k < topo + vis; k++) {
             const TrophyItem *t = &ts->items[lista[k]];
             int y = RY + 2 + (k - topo) * rh, s = k == sel;
@@ -1057,13 +1320,12 @@ static void desenhar_trofeus(int g, int sel, int topo, int filtro, int spoiler) 
             icone_trofeu(RX + 26, y + (rh - TRP_ICON_SZ) / 2, t);
             const int tx = RX + 26 + TRP_ICON_SZ + 18, tw = RW - (tx - RX) - 110;
             int oculto = t->hidden && !t->unlocked && !spoiler;
-            texto_corte(tx, y + 32, 19, t->unlocked ? BRANCO : CINZA, 255, oculto ? T("Troféu oculto", "Hidden trophy") : t->name, tw);
+            texto_corte(tx, y + 32, 19, t->unlocked ? BRANCO : CINZA, 255, oculto ? tr("trophies.hidden") : t->name, tw);
             texto_corte(tx, y + 58, 15, CINZA, t->unlocked ? 230 : 170,
-                        oculto ? T("Continue jogando para descobrir (" BT_Y " mostra).", "Keep playing to find out (" BT_Y " shows it).") : t->detail, tw);
-            static const char *const gn_pt[4] = { "PLATINA", "OURO", "PRATA", "BRONZE" };
-            static const char *const gn_en[4] = { "PLATINUM", "GOLD", "SILVER", "BRONZE" };
-            const char *const *gn = T(gn_pt, gn_en);
-            texto_dir(RX + RW - 28, y + 32, 13, COR_GRAU[grau_i(t->grade)], t->unlocked ? 255 : 150, gn[grau_i(t->grade)]);
+                        oculto ? tr("trophies.hidden_hint") : t->detail, tw);
+            static const char *const gn[4] = { "trophies.grade_caps.platinum", "trophies.grade_caps.gold",
+                                               "trophies.grade_caps.silver", "trophies.grade_caps.bronze" };
+            texto_dir(RX + RW - 28, y + 32, 13, COR_GRAU[grau_i(t->grade)], t->unlocked ? 255 : 150, tr(gn[grau_i(t->grade)]));
             if (t->unlocked) texto_dir(RX + RW - 28, y + 56, 14, VERDE, 255, "✓");
         }
         if (topo > 0) texto(RX + RW / 2, RY - 4, 16, CINZA, 230, "▲");
@@ -1072,10 +1334,10 @@ static void desenhar_trofeus(int g, int sel, int topo, int filtro, int spoiler) 
 
     linha_h(48, 676, W - 96, OURO_ESC, 140);
     x = 56; int yr = 706;
-    x = dica(x, yr, BT_L BT_R, T("Jogo", "Game"));
-    x = dica(x, yr, BT_X, T("Filtro", "Filter"));
-    x = dica(x, yr, BT_Y, spoiler ? T("Esconder ocultos", "Hide hidden") : T("Mostrar ocultos", "Show hidden"));
-    dica(x, yr, BT_B, T("Voltar", "Back"));
+    x = dica(x, yr, BT_L BT_R, tr("launcher.menu.game"));
+    x = dica(x, yr, BT_X, tr("trophies.btn.filter"));
+    x = dica(x, yr, BT_Y, spoiler ? tr("trophies.btn.hide_hidden") : tr("trophies.btn.show_hidden"));
+    dica(x, yr, BT_B, tr("common.back"));
     assinatura(yr);
 }
 
@@ -1092,8 +1354,10 @@ static void desenhar_atualizar(const UpdStatus *st) {
     rborda(X, Y, PW, PH, 20, 1, OURO_ESC, 255);
     retangulo(X + 40, Y, PW - 80, 2, OURO, 200);
     omega(X + 60, Y + 62, 17, OURO, 255);
-    texto_e(X + 92, Y + 70, 18, OURO, 255, T("ATUALIZAÇÃO", "UPDATE"), 4);
-    texto_dir(X + PW - 40, Y + 70, 17, CINZA, 235, T("Instalado: v" VERSAO, "Installed: v" VERSAO));
+    texto_e(X + 92, Y + 70, 18, OURO, 255, tr("updater.title"), 4);
+    char instalado[48];
+    snprintf(instalado, sizeof instalado, tr("updater.installed"), VERSAO);
+    texto_dir(X + PW - 40, Y + 70, 17, CINZA, 235, instalado);
     linha_h(X + 30, Y + 98, PW - 60, OURO_ESC, 160);
 
     const char *l1 = "", *l2 = "";
@@ -1101,38 +1365,44 @@ static void desenhar_atualizar(const UpdStatus *st) {
     int barra = -1;   // 0..1000
     switch (st->state) {
     case UPD_IDLE:
-    case UPD_CHECKING: l1 = T("Procurando versão nova…", "Checking for a new version…"); l2 = T("Conectando ao GitHub do projeto.", "Connecting to the project's GitHub."); break;
+    case UPD_CHECKING: l1 = tr("updater.checking"); l2 = tr("updater.connecting"); break;
     case UPD_UP_TO_DATE:
-        snprintf(b1, sizeof b1, T("Você já tem a versão mais nova (%s).", "You already have the latest version (%s)."), st->latest_tag[0] ? st->latest_tag : "v" VERSAO);
-        l1 = b1; l2 = st->asset_url[0] ? T("Aperte " BT_X " para reinstalar mesmo assim.", "Press " BT_X " to reinstall anyway.") : ""; break;
+        snprintf(b1, sizeof b1, tr("updater.up_to_date"), st->latest_tag[0] ? st->latest_tag : "v" VERSAO);
+        l1 = b1; l2 = st->asset_url[0] ? tr("updater.reinstall_hint") : ""; break;
     case UPD_AVAILABLE: {
         char t[24]; mb(t, sizeof t, st->asset_size);
-        snprintf(b1, sizeof b1, T("Versão %s disponível!", "Version %s available!"), st->latest_tag);
-        snprintf(b2, sizeof b2, T("%s (%s): atualiza o launcher, o God of War e o God of War II.", "%s (%s): updates the launcher, God of War and God of War II."), st->asset_name, t);
+        snprintf(b1, sizeof b1, tr("updater.available"), st->latest_tag);
+        snprintf(b2, sizeof b2, tr("updater.available_detail"), st->asset_name, t);
         l1 = b1; l2 = b2; break;
     }
     case UPD_DOWNLOADING: {
         char a[24], t[24]; mb(a, sizeof a, st->dl_now); mb(t, sizeof t, st->dl_total ? st->dl_total : st->asset_size);
-        snprintf(b1, sizeof b1, T("Baixando %s…", "Downloading %s…"), st->latest_tag);
-        snprintf(b2, sizeof b2, "%s de %s", a, t);
+        snprintf(b1, sizeof b1, tr("updater.downloading"), st->latest_tag);
+        snprintf(b2, sizeof b2, tr("updater.progress"), a, t);
         uint64_t tot = st->dl_total ? st->dl_total : st->asset_size;
         barra = tot ? (int)(st->dl_now * 1000 / tot) : 0;
         l1 = b1; l2 = b2; break;
     }
     case UPD_EXTRACTING:
-        snprintf(b1, sizeof b1, T("Instalando… (%d de %d)", "Installing… (%d of %d)"), st->files_done, st->files_total);
+        snprintf(b1, sizeof b1, tr("updater.installing"), st->files_done, st->files_total);
         snprintf(b2, sizeof b2, "%s", st->current_file);
         barra = st->files_total ? st->files_done * 1000 / st->files_total : 0;
         l1 = b1; l2 = b2; break;
     case UPD_DONE:
-        snprintf(b1, sizeof b1, T("Atualizado para %s!", "Updated to %s!"), st->latest_tag);
-        l1 = b1; l2 = T("Aperte " BT_A " para reabrir o launcher na versão nova.", "Press " BT_A " to reopen the launcher on the new version."); break;
+        snprintf(b1, sizeof b1, tr("updater.done"), st->latest_tag);
+        l1 = b1; l2 = tr("updater.reopen_hint"); break;
     case UPD_ERROR: {
-        const char *const e[] = { T("Erro desconhecido.", "Unknown error."), T("Sem conexão com a internet.", "No internet connection."), T("O GitHub recusou o pedido.", "GitHub refused the request."),
-                                         T("A versão nova não tem arquivo para o Switch.", "The new version has no Switch file."), T("Erro ao gravar no cartão SD (espaço livre?).", "Error writing to the SD card (free space?)."),
-                                         T("Arquivo baixado com defeito.", "Downloaded file is corrupted."), T("Cancelado.", "Canceled.") };
+        const char *const e[] = {
+            tr("updater.err.unknown"),
+            tr("updater.err.no_internet"),
+            tr("updater.err.refused"),
+            tr("updater.err.no_asset"),
+            tr("updater.err.sd_write"),
+            tr("updater.err.corrupt"),
+            tr("updater.err.canceled"),
+        };
         l1 = st->err < (int)(sizeof e / sizeof e[0]) ? e[st->err] : e[0];
-        if (st->err == UPD_ERR_HTTP) { snprintf(b2, sizeof b2, T("Resposta HTTP %ld.", "HTTP response %ld."), st->http_code); l2 = b2; }
+        if (st->err == UPD_ERR_HTTP) { snprintf(b2, sizeof b2, tr("updater.err.http"), st->http_code); l2 = b2; }
         break;
     }
     }
@@ -1144,27 +1414,26 @@ static void desenhar_atualizar(const UpdStatus *st) {
         if (w > 14) rrect(X + 40, Y + 236, w, 14, 7, OURO, 255);
     }
     if (st->state == UPD_DOWNLOADING || st->state == UPD_EXTRACTING)
-        texto(X + 40, Y + 300, 15, CINZA_ESC, 255, T("Não desligue o console nem tire o cartão SD.", "Don't turn off the console or remove the SD card."));
+        texto(X + 40, Y + 300, 15, CINZA_ESC, 255, tr("updater.warn_power"));
     else if (st->state == UPD_AVAILABLE)
-        texto(X + 40, Y + 300, 15, CINZA_ESC, 255, T("Saves, opções, vídeos e texturas HD ficam como estão.", "Saves, options, videos and HD textures stay as they are."));
+        texto(X + 40, Y + 300, 15, CINZA_ESC, 255, tr("updater.keeps_data"));
 
     linha_h(48, 676, W - 96, OURO_ESC, 140);
     int x = 56, yr = 706;
-    if (st->state == UPD_AVAILABLE) x = dica(x, yr, BT_A, T("Atualizar", "Update"));
-    if (st->state == UPD_DONE) x = dica(x, yr, BT_A, T("Reabrir", "Reopen"));
-    if (st->state == UPD_ERROR) x = dica(x, yr, BT_Y, T("Tentar de novo", "Try again"));
-    if (st->state != UPD_DONE) dica(x, yr, BT_B, st->state == UPD_DOWNLOADING ? T("Cancelar", "Cancel") : T("Voltar", "Back"));
+    if (st->state == UPD_AVAILABLE) x = dica(x, yr, BT_A, tr("launcher.menu.update"));
+    if (st->state == UPD_DONE) x = dica(x, yr, BT_A, tr("updater.btn.reopen"));
+    if (st->state == UPD_ERROR) x = dica(x, yr, BT_Y, tr("updater.btn.retry"));
+    if (st->state != UPD_DONE) dica(x, yr, BT_B, st->state == UPD_DOWNLOADING ? tr("updater.btn.cancel") : tr("common.back"));
     assinatura(yr);
 }
 #endif
 
 static void carregar_fundo(void) {
     bg = malloc(W * H * 4);
-    FILE *f = fopen("romfs:/bg.bgra", "rb");
-    size_t n = 0;
-    if (f) { n = fread(bg, 4, W * H, f); fclose(f); }
-    if (n != W * H) for (int i = 0; i < W * H; i++) bg[i] = FUNDO;
-    else for (int i = 0; i < W * H; i++) { u32 v = bg[i]; bg[i] = (v >> 16 & 0xff) | (v & 0xff00) | (v & 0xff) << 16; }
+    if (!bg) return;
+    if (!ga_load_cover_rgba(dir, romfs_ativo, bg, W, H)) {
+        for (int i = 0; i < W * H; i++) bg[i] = FUNDO;
+    }
     // arte bem escurecida e puxada para o marrom do layout, com vinheta
     for (int y = 0; y < H; y++)
         for (int x = 0; x < W; x++) {
@@ -1198,7 +1467,7 @@ int main(int argc, char **argv) {
         snprintf(self_nro, sizeof self_nro, "%.700s", dir);
         char *b = strrchr(dir, '/'); if (b) b[1] = 0;
     }
-    int romfs_ativo = R_SUCCEEDED(romfsInit());
+    romfs_ativo = R_SUCCEEDED(romfsInit());
     carregar_fundo();
 
     plInitialize(PlServiceType_User);
@@ -1217,8 +1486,16 @@ int main(int argc, char **argv) {
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     PadState pad; padInitializeDefault(&pad);
 
-    musica_iniciar();
+    // Textos da interface: embutidos + data/lang/<código>.ini do SD. Tudo fica na RAM, então a tela de
+    // atualização continua funcionando depois do romfsExit().
+    char lang_dir[FS_MAX_PATH];
+    snprintf(lang_dir, sizeof lang_dir, "%.700sdata/lang", dir);
+    i18n_init(lang_dir);
+    idioma_sistema = detectar_idioma_switch();
+    escanear_traducoes();
     opcoes_ler();
+    sincronizar_idioma_auto();
+    musica_iniciar();
     info_ler();
     capas_carregar();
 
@@ -1227,7 +1504,7 @@ int main(int argc, char **argv) {
     quadro = malloc(W * H * 4);
     float cs[N] = { 0 }, fade = 1;
     cs[sel] = 1;
-    const char *msg_hb = envHasNextLoad() ? NULL : T("Abra pelo hbmenu para poder iniciar os jogos.", "Open from hbmenu to be able to start the games.");
+    const char *msg_hb = envHasNextLoad() ? NULL : tr("launcher.msg.open_from_hbmenu");
     const char *msg = msg_hb;
     u64 tick = 0;
     int tela_trof = 0, t_jogo = 0, t_sel = 0, t_topo = 0, t_filtro = 0, t_spoiler = 0;
@@ -1273,7 +1550,8 @@ int main(int argc, char **argv) {
                 if (k & HidNpadButton_Y) upd_start_check(VERSAO);
                 else if (k & (HidNpadButton_B | HidNpadButton_Minus)) {
                     tela_upd = 0;
-                    if (!romfs_ativo && R_SUCCEEDED(romfsInit())) { romfs_ativo = 1; musica_iniciar(); }
+                    if (!romfs_ativo && R_SUCCEEDED(romfsInit())) romfs_ativo = 1;
+                    musica_iniciar();
                 }
             }
             int marca = (int)st.state * 100000 + (int)(st.dl_now >> 16) + st.files_done * 7;
@@ -1308,21 +1586,29 @@ int main(int argc, char **argv) {
         if (tela_op) {
             int lista[NOP], n = itens_da_aba(aba, lista);
             Opcao *o = &opcoes[lista[sel_op]];
+            int antes_mus = opcoes[O_MUSICA].atual;
             if (k & HidNpadButton_AnyUp) sel_op = (sel_op + n - 1) % n;
             if (k & HidNpadButton_AnyDown) sel_op = (sel_op + 1) % n;
             if (k & (HidNpadButton_AnyRight | HidNpadButton_A)) o->atual = (o->atual + 1) % o->n, mudou = 1;
             if (k & HidNpadButton_AnyLeft) o->atual = (o->atual + o->n - 1) % o->n, mudou = 1;
             if (k & HidNpadButton_X) o->atual = o->padrao, mudou = 1;
-            if (idioma != opcoes[O_LANG].atual) {
-                const int era_hb = msg == msg_hb;
-                idioma = opcoes[O_LANG].atual;
-                msg_hb = envHasNextLoad() ? NULL : T("Abra pelo hbmenu para poder iniciar os jogos.", "Open from hbmenu to be able to start the games.");
-                if (era_hb) msg = msg_hb;
+            if (opcoes[O_MUSICA].atual != antes_mus) {
+                if (opcoes[O_MUSICA].atual) musica_iniciar();
+                else musica_parar();
+            }
+            {
+                int novo_ui = resolver_ui_idioma();
+                if (idioma != novo_ui) {
+                    const int era_hb = msg == msg_hb;
+                    aplicar_idioma(novo_ui);
+                    msg_hb = envHasNextLoad() ? NULL : tr("launcher.msg.open_from_hbmenu");
+                    if (era_hb) msg = msg_hb;
+                }
             }
             if (k & (HidNpadButton_R | HidNpadButton_ZR)) aba = (aba + 1) % NABAS, sel_op = 0;
             if (k & (HidNpadButton_L | HidNpadButton_ZL)) aba = (aba + NABAS - 1) % NABAS, sel_op = 0;
             if (k & (HidNpadButton_B | HidNpadButton_Plus)) {
-                if (mudou && !opcoes_gravar()) msg = T("Não foi possível gravar data/vitart_options.ini.", "Could not write data/vitart_options.ini.");
+                if (mudou && !opcoes_gravar()) msg = tr("launcher.msg.ini_write_failed");
                 else msg = msg_hb, mudou = 0;
                 tela_op = 0;
             }
@@ -1354,12 +1640,16 @@ int main(int argc, char **argv) {
 #endif
         else if (k & HidNpadButton_A) {
             char p[FS_MAX_PATH]; caminho(p, sizeof p, sel);
-            if (!existe(p)) msg = T("Arquivo do jogo não encontrado na pasta do launcher.", "Game file not found in the launcher folder.");
+            info[sel].nro = existe(p);
+            info[sel].dump = ga_game_dump_ok(dir, sel);
+            if (!info[sel].nro) msg = tr("launcher.msg.game_file_missing");
+            else if (!info[sel].dump) msg = tr("launcher.msg.vita_files_missing");
             else if (envHasNextLoad()) {
-                if (mudou && !opcoes_gravar()) msg = T("Não foi possível gravar data/vitart_options.ini.", "Could not write data/vitart_options.ini.");
+                if ((mudou || opcoes[O_LANG].atual == 0) && !opcoes_gravar())
+                    msg = tr("launcher.msg.ini_write_failed");
                 char args[FS_MAX_PATH + 4]; snprintf(args, sizeof args, "\"%.760s\"", p);
                 if (R_SUCCEEDED(envSetNextLoad(p, args))) { gravar_ultimo(sel); lancar = 1; }
-                else msg = T("Falha ao preparar o jogo escolhido.", "Failed to prepare the chosen game.");
+                else msg = tr("launcher.msg.prepare_failed");
             }
         }
         for (int i = 0; i < N; i++) {

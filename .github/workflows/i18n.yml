@@ -1,0 +1,23 @@
+name: UI translations (lang/*.ini)
+
+on:
+  push:
+    branches: [main, 'feat/**']
+    paths: ['lang/**', 'platform/nx/i18n*', 'tools/gen_i18n.py', 'tests/**', 'launcher/main.c', 'platform/nx/nx_menu.cpp', '.github/workflows/i18n.yml']
+  pull_request:
+    paths: ['lang/**', 'platform/nx/i18n*', 'tools/gen_i18n.py', 'tests/**', 'launcher/main.c', 'platform/nx/nx_menu.cpp', '.github/workflows/i18n.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check lang files and test the loader
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Same keys and placeholders in every language, i18n_data.c up to date
+        run: python3 tools/gen_i18n.py --check
+      - name: Loader unit tests (gcc, with ASan/UBSan)
+        run: bash tests/run_i18n_tests.sh

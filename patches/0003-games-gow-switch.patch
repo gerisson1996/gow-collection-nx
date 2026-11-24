@@ -44,7 +44,7 @@ index 33a9d82..2e2ccbf 100644
  struct Options {
      bool tex = true, audio = true, counter = false, borderless = false;
      uint32_t fps = 1; // 1 = 30, 2 = 60, 3 = máximo (taxa do monitor, sem acelerar o jogo)
-@@ -79,13 +93,28 @@ struct Options {
+@@ -79,13 +93,29 @@ struct Options {
      bool inf_health = false, inf_magic = false, inf_rage = false; // cheats (cheats_tick)
      bool hp_bars = true; // barras de vida dos inimigos (enemy_hp.cpp)
      uint32_t aspecto = 1; // proporção da tela: 1 Auto (a do monitor), 2 16:9, 3 16:10, 4 21:9, 5 32:9, 6 4:3
@@ -53,7 +53,8 @@ index 33a9d82..2e2ccbf 100644
 +    // saturação 0..8 (4 = neutro), vibrance 0..4, dither 0/1; resolução na base (0 = a mesma do portátil)
 +    uint32_t aa = 0, aniso = 1, gamma = 4, sat = 4, vib = 0, dither = 0, scale_dock = 0;
 +    bool drs = false; // resolução dinâmica: desligada (tirada do menu)
-+    uint32_t lang = 0; // idioma do mod menu e do launcher: 0 português (Brasil), 1 inglês (language= no ini)
++    uint32_t lang = 0; // idioma do mod menu: 0 português (Brasil), 1 inglês, 2 espanhol
++    std::string lang_raw; // preserva language= original do vitart_options.ini (ex.: es, pt-BR, fr)
 +    uint32_t fgen = 0; // geração de quadros (LSFG, só deko3d): 0 desligada, 1 desempenho, 2 qualidade
  };
 +// escala de cada código de resolução (5 = 720p: a altura do Vita, 408, levada a 720)
@@ -74,7 +75,7 @@ index 33a9d82..2e2ccbf 100644
  std::atomic<uint32_t> g_req_tex{0}, g_req_aud{0}, g_req_res{0}, g_req_fps{0}, g_req_cnt{0}, g_req_dsp{0}, g_req_vsync{0}, g_req_qte{0},
      g_req_hp{0}, g_req_mp{0}, g_req_rage{0}, g_req_trophy{0}, g_req_restart{0}, g_req_quit{0};
  // Carregador de mods (hle_io.cpp, docs/modding/README.md): mod_<id>=0/1 no ini (vale ao reiniciar). O menu lista os mods
-@@ -137,8 +166,8 @@ void save() {
+@@ -137,8 +167,8 @@ void save() {
      // o Settings pode ter trocado com o jogo aberto (vale na próxima abertura)
      std::vector<std::string> alheias;
      if (FILE *f = fopen(ini_path().c_str(), "r")) {
@@ -85,7 +86,7 @@ index 33a9d82..2e2ccbf 100644
          char line[1024];
          while (fgets(line, sizeof line, f)) {
              bool nossa = line[0] == '\n' || line[0] == '\r';
-@@ -150,7 +179,7 @@ void save() {
+@@ -150,7 +180,7 @@ void save() {
      const bool tem_api = std::any_of(alheias.begin(), alheias.end(), [](const std::string &l) { return !l.rfind("renderer=", 0); });
      if (FILE *f = fopen(ini_path().c_str(), "w")) {
          fprintf(f, "# Opções do PC (mudam pelo menu de pausa do jogo: Options)\n");
@@ -94,7 +95,7 @@ index 33a9d82..2e2ccbf 100644
                  g_opt.tex ? 1u : 0u, g_opt.audio ? 1u : 0u, g_opt.scale, g_opt.fps == 3 ? "max" : g_opt.fps == 2 ? "60" : "30",
                  g_opt.vsync ? 1u : 0u, g_opt.counter ? 1u : 0u, g_opt.borderless ? 1u : 0u,
                  g_opt.auto_qte ? 1u : 0u);
-@@ -158,6 +187,14 @@ void save() {
+@@ -158,6 +188,14 @@ void save() {
                  g_opt.inf_magic ? 1u : 0u, g_opt.inf_rage ? 1u : 0u);
          fprintf(f, "enemy_health_bars=%u\n", g_opt.hp_bars ? 1u : 0u);
          fprintf(f, "aspect=%s\n", kAspectoNome[g_opt.aspecto >= 1 && g_opt.aspecto <= 6 ? g_opt.aspecto : 1]);
@@ -102,14 +103,14 @@ index 33a9d82..2e2ccbf 100644
 +        fprintf(f, "anti_aliasing=%s\nanisotropic=%u\ngamma=%u\nsaturation=%u\nvibrance=%u\ndebanding=%u\nresolution_docked=%u\n",
 +                g_opt.aa ? "fxaa" : "off", g_opt.aniso, g_opt.gamma, g_opt.sat, g_opt.vib, g_opt.dither, g_opt.scale_dock);
 +        fprintf(f, "dynamic_resolution=%u\n", g_opt.drs ? 1u : 0u);
-+        fprintf(f, "language=%s\n", g_opt.lang ? "en" : "pt");
++        if (!g_opt.lang_raw.empty()) fprintf(f, "language=%s\n", g_opt.lang_raw.c_str());
 +        fprintf(f, "frame_generation=%s\n", g_opt.fgen == 2 ? "quality" : g_opt.fgen == 1 ? "performance" : "off");
 +        if (gvk::frame_gen_available(1) || gvk::frame_gen_available(2)) fprintf(f, "fg_flow=%u\n", gvk::frame_gen_flow());
 +        if (g_profile30_applied) fprintf(f, "nx_gow2_30fps_v1=1\n");
          if (!tem_api) fprintf(f, "renderer=%s\n", g_renderer.c_str());
          for (const std::string &l : alheias) fprintf(f, "%s\n", l.c_str());
          for (auto &[id, on] : g_mods) fprintf(f, "mod_%s=%u\n", id.c_str(), on ? 1u : 0u); // carregador de mods
-@@ -173,17 +210,32 @@ void load() {
+@@ -173,17 +211,38 @@ void load() {
              unsigned v = 0;
              if (sscanf(line, "hd_textures=%u", &v) == 1) g_opt.tex = v != 0;
              if (sscanf(line, "ps2_audio=%u", &v) == 1) g_opt.audio = v != 0;
@@ -126,7 +127,13 @@ index 33a9d82..2e2ccbf 100644
              if (sscanf(line, "cheat_infinite_magic=%u", &v) == 1) g_opt.inf_magic = v != 0;
              if (sscanf(line, "cheat_infinite_rage=%u", &v) == 1) g_opt.inf_rage = v != 0;
              if (sscanf(line, "enemy_health_bars=%u", &v) == 1) g_opt.hp_bars = v != 0;
-+            if (!strncmp(line, "language=", 9)) g_opt.lang = ini_value(line, 9) == "en" ? 1 : 0;
++            if (!strncmp(line, "language=", 9)) {
++                g_opt.lang_raw = ini_value(line, 9);
++                const std::string &lv = g_opt.lang_raw;
++                const bool sep = lv.size() == 2 || (lv.size() > 2 && (lv[2] == '-' || lv[2] == '_'));
++                g_opt.lang = (sep && (lv[0] == 'e' || lv[0] == 'E') && (lv[1] == 'n' || lv[1] == 'N')) ? 1
++                           : (sep && (lv[0] == 'e' || lv[0] == 'E') && (lv[1] == 's' || lv[1] == 'S')) ? 2 : 0;
++            }
 +            if (!strncmp(line, "upscaler=", 9)) g_opt.upscaler = ini_value(line, 9) == "fsr1" ? 1 : 0;
 +            if (sscanf(line, "sharpness=%u", &v) == 1) g_opt.sharp = v <= 10 ? v : 0; // fsr_sharpness= antigo é ignorado
 +            if (!strncmp(line, "anti_aliasing=", 14)) g_opt.aa = ini_value(line, 14) == "fxaa" ? 1 : 0;
@@ -143,7 +150,7 @@ index 33a9d82..2e2ccbf 100644
              if (!strncmp(line, "aspect=", 7))
                  for (uint32_t i = 1; i <= 6; i++)
                      if (ini_value(line, 7) == kAspectoNome[i]) g_opt.aspecto = i;
-@@ -194,10 +246,42 @@ void load() {
+@@ -194,10 +253,42 @@ void load() {
          }
          fclose(f);
      }
@@ -186,7 +193,7 @@ index 33a9d82..2e2ccbf 100644
      const uint32_t s = g_opt.scale ? g_opt.scale : gvk::auto_render_scale();
      return s < 1 ? 1 : s > 4 ? 4 : s;
  }
-@@ -344,6 +428,12 @@ const bool g_watch = (watch_import(on_import), true);
+@@ -344,6 +435,12 @@ const bool g_watch = (watch_import(on_import), true);
  // herói e carrega o R_Hero do checkpoint de novo, agora do mod. Só com a partida rodando e a fila parada.
  // abre o jogo de novo com a mesma linha de comando: herói, HUD e menus só são lidos na abertura
  void restart_process() {
@@ -199,7 +206,7 @@ index 33a9d82..2e2ccbf 100644
      wchar_t exe[MAX_PATH] = {};
      GetModuleFileNameW(nullptr, exe, MAX_PATH);
      std::wstring cmd = GetCommandLineW();
-@@ -356,6 +446,7 @@ void restart_process() {
+@@ -356,6 +453,7 @@ void restart_process() {
          ExitProcess(0);
      }
      logf("vitart: não deu para reiniciar (CreateProcess %lu)", GetLastError());
@@ -207,7 +214,7 @@ index 33a9d82..2e2ccbf 100644
  }
  
  bool qte_na_tela(); // lá embaixo, junto das tabelas do QTE automático
-@@ -440,12 +531,31 @@ std::string renderer_choice() {
+@@ -440,12 +538,31 @@ std::string renderer_choice() {
  }
  
  // Antes do primeiro quadro: aplica as escolhas salvas (texturas, áudio e resolução valem também no GoW2).
@@ -241,7 +248,7 @@ index 33a9d82..2e2ccbf 100644
      gvk::set_borderless(g_opt.borderless);
  }
  
-@@ -501,12 +611,19 @@ void sonda_aspecto() {
+@@ -501,12 +618,19 @@ void sonda_aspecto() {
  }
  
  void game_options_tick() {
@@ -262,7 +269,7 @@ index 33a9d82..2e2ccbf 100644
      }
      // VITART_MEMSNAP=<pasta>:<s1>,<s2>,... (diagnóstico, para achar a vida e a magia): nos segundos pedidos despeja
      // a memória do guest em <pasta>/t<s> e anota os medidores do HUD (HealthMeter_Value/MagicMeter_Value, +0x14/+0x18
-@@ -532,6 +649,7 @@ void game_options_tick() {
+@@ -532,6 +656,7 @@ void game_options_tick() {
              when.erase(when.begin());
          }
      }
@@ -270,7 +277,7 @@ index 33a9d82..2e2ccbf 100644
      // F11 / Alt+Enter também mudam o modo de exibição: a escolha acompanha (vale em todos os módulos)
      static bool applied_borderless = g_opt.borderless;
      if (const uint32_t v = g_req_dsp.exchange(0); v == 1 || v == 2) {
-@@ -552,6 +670,7 @@ void game_options_tick() {
+@@ -552,6 +677,7 @@ void game_options_tick() {
      };
      static const TimeProfile kGow1{0x812b75d0, 0x812b75e0, 0x812bc0c0};
      static const TimeProfile kGow2{0x812df6d0, 0x812df6e0, 0x812e40e0}; // menu: 1 só no menu principal (memória comparada)
@@ -278,7 +285,7 @@ index 33a9d82..2e2ccbf 100644
      const TimeProfile *tp = is_gow1() ? &kGow1 : is_gow2() ? &kGow2 : nullptr;
      if (tp) {
          // VITART_MEMSNAP="q1,q2,...": grava a memória global do jogo (0x81000000..0x81800000, só o mapeado)
-@@ -582,7 +701,11 @@ void game_options_tick() {
+@@ -582,7 +708,11 @@ void game_options_tick() {
              }
          }
          // VITART_TIMEDUMP=1 (depuração): a soma do dt do jogo contra o relógio, a cada 10 s
@@ -290,7 +297,7 @@ index 33a9d82..2e2ccbf 100644
              static double game_t = 0;
              static uint32_t nframes = 0;
              static auto t0 = std::chrono::steady_clock::now();
-@@ -592,8 +715,13 @@ void game_options_tick() {
+@@ -592,8 +722,13 @@ void game_options_tick() {
              if (std::isfinite(dtv) && dtv > 0 && dtv < 1) game_t += dtv, nframes++;
              const double real = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
              if (real >= 10) {
@@ -306,7 +313,7 @@ index 33a9d82..2e2ccbf 100644
                  game_t = 0, nframes = 0, t0 = std::chrono::steady_clock::now();
              }
          }
-@@ -620,6 +748,7 @@ void game_options_tick() {
+@@ -620,6 +755,7 @@ void game_options_tick() {
          // o menu principal anima por quadro, não pelo tempo: nele o ritmo é o do jogo mesmo sem VSync
          // (GoW1: 0x812bc0c0 = 1 só no menu principal, achado comparando a memória global nas fases)
          display_set_fixed_step_addr(tp->menu);
@@ -314,7 +321,7 @@ index 33a9d82..2e2ccbf 100644
          // estado do jogo (o mesmo do QTE automático): GoW1 0x812c2e04 = 0xb jogando; GoW2 0x812ec498 = 0xc jogando.
          // Qualquer outro (pausa, Power Up, carregamento, cenas) anima por quadro: 60 FPS no máximo.
          // QTE e agarrões também: as animações sincronizadas (o Kratos preso a uma junta do inimigo, "Use Sync
-@@ -659,11 +788,30 @@ void game_options_tick() {
+@@ -659,11 +795,30 @@ void game_options_tick() {
          g_opt.tex = v == 2, texpack_set_enabled(g_opt.tex), changed = true;
      if (const uint32_t v = g_req_aud.exchange(0); v && ps2audio_available() && (v == 2) != g_opt.audio)
          g_opt.audio = v == 2, ps2audio_set_enabled(g_opt.audio), changed = true;
@@ -348,7 +355,7 @@ index 33a9d82..2e2ccbf 100644
      if (const uint32_t v = g_req_asp.exchange(0); v >= 1 && v <= 6 && v != g_opt.aspecto) {
          g_opt.aspecto = v, changed = true;
          logf("vitart: proporção da tela %s", kAspectoNome[v]);
-@@ -687,7 +835,7 @@ void game_options_tick() {
+@@ -687,7 +842,7 @@ void game_options_tick() {
          gvk::set_aspect_widen(w);
      }
      if (const uint32_t v = g_req_fps.exchange(0); v >= 1 && v <= 3 && v != g_opt.fps) {
@@ -357,7 +364,7 @@ index 33a9d82..2e2ccbf 100644
          logf("vitart: FPS %s", v == 3 ? "máximo" : v == 2 ? "60" : "30");
      }
      if (const uint32_t v = g_req_vsync.exchange(0); (v == 1 || v == 2) && (v == 2) != g_opt.vsync) {
-@@ -705,6 +853,7 @@ void game_options_tick() {
+@@ -705,6 +860,7 @@ void game_options_tick() {
      if (const uint32_t v = g_req_cnt.exchange(0); (v == 1 || v == 2) && (v == 2) != g_opt.counter) {
          g_opt.counter = v == 2, changed = true;
      }
@@ -365,7 +372,7 @@ index 33a9d82..2e2ccbf 100644
      for (auto [req, opt, what] : {std::tuple{&g_req_hp, &g_opt.inf_health, "vida infinita"},
                                    std::tuple{&g_req_mp, &g_opt.inf_magic, "magia infinita"},
                                    std::tuple{&g_req_rage, &g_opt.inf_rage, "fúria infinita"}})
-@@ -904,3 +1053,84 @@ uint32_t game_qte_auto(uint8_t &lx, uint8_t &ly) {
+@@ -904,3 +1060,84 @@ uint32_t game_qte_auto(uint8_t &lx, uint8_t &ly) {
  }
  
  } // namespace vt
@@ -420,7 +427,7 @@ index 33a9d82..2e2ccbf 100644
 +    case SAT: g_opt.sat = v > 8 ? 8 : v, apply_gfx(), g_req_save = 1; break;
 +    case VIB: g_opt.vib = v > 4 ? 4 : v, apply_gfx(), g_req_save = 1; break;
 +    case DITHER: g_opt.dither = v ? 1 : 0, apply_gfx(), g_req_save = 1; break;
-+    case LANG: g_opt.lang = v ? 1 : 0, g_req_save = 1; break;
++    case LANG: g_opt.lang = v <= 2 ? v : 0, g_opt.lang_raw = (g_opt.lang == 2 ? "es" : g_opt.lang == 1 ? "en" : "pt"), g_req_save = 1; break;
 +    case FPS: g_req_fps = v; break;
 +    case VSYNC: g_req_vsync = b; break;
 +    case COUNTER: g_req_cnt = b; break;

@@ -29,6 +29,9 @@ const char *game_name();
 // Pede para o processo sair (HOME/plus) e devolve se já foi pedido.
 void request_exit();
 bool exit_requested();
+// Encadeia gow-nx.nro via envSetNextLoad e pede para sair (volta direto ao launcher).
+bool can_return_to_launcher();
+void request_return_to_launcher();
 // Sai do processo na hora (HOME, fim do jogo): grava os arquivos e encerra sem destrutores, com as outras threads paradas.
 [[noreturn]] void hard_exit(int code);
 // Aplet em primeiro plano: false durante o menu HOME (o jogo continua, o som e a imagem seguem normalmente).
